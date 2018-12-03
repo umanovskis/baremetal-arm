@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-sudo apt-get install qemu-system-arm gcc-arm-none-eabi build-essential cmake
+sudo apt-get install qemu-system-arm gcc-arm-none-eabi build-essential cmake bison flex
 
 if [[ $? > 0 ]]; then
     echo "Installation failed! Check connectivity and apt-get setup"

@@ -48,4 +48,10 @@ Finally, we need the essential components of a build system. In the coming examp
 sudo apt-get install build-essential cmake
 ```
 
+On some Linux variants, you might also need to install `bison` and `flex` if they are not already present. Those tools are also required to build U-Boot.
+
+```
+sudo apt-get install bison flex
+```
+
 With this, your system should now have everything that is necessary to compile programs for ARM and run them in an emulated machine. In the next article, we'll continue our introduction by booting the emulated machine and giving the just-installed tools a spin.
