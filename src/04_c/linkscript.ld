@@ -4,7 +4,7 @@ ENTRY(_Reset)
 
 MEMORY
 {
-    ROM (rx) : ORIGIN = 0x60010000, LENGTH = 1M
+    ROM (rx) : ORIGIN = 0x60000000, LENGTH = 1M
     RAM (rwx): ORIGIN = 0x70000000, LENGTH = 32M
 }
 
@@ -15,7 +15,6 @@ SECTIONS
         *(.text)
         *(.rodata)
      } > ROM
-    . = ALIGN(8);
     _text_end = .;
     .data : AT(ADDR(.text) + SIZEOF(.text))
     {
