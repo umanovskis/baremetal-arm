@@ -10,7 +10,7 @@ void write(const char* str)
 }
 
 int main() {
-	const char* s = "Hello world more more text so more!\n";
+	const char* s = "Hello world from bare-metal!\n";
 	write(s);
 	*uart0 = 'A';
 	*uart0 = 'B';

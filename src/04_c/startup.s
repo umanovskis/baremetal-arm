@@ -1,4 +1,3 @@
-
 /* Some defines */
 .equ MODE_FIQ, 0x11
 .equ MODE_IRQ, 0x12
@@ -43,8 +42,15 @@ irq_loop:
 
     /* Supervisor mode */
     msr cpsr_c, MODE_SVC
+    ldr r1, =_stack_start
     ldr sp, =_stack_end
 
+stack_loop:
+    cmp r1, sp
+    strlt r0, [r1], #4
+    blt stack_loop
+
+    /* Start copying data */
     ldr r0, =_text_end
     ldr r1, =_data_start
     ldr r2, =_data_end
