@@ -279,3 +279,52 @@ And the lines printing individual letters, like `*uart0 = 'A';` shouldn't cause 
 Finally, the C code also uses the stack because of the `write` function. If the stack has not been set up correctly, `write` will fail to receive any arguments when called like `write(s)`, so the first line of the expected output wouldn't appear. The stack is also used to allocate the `s` pointer itself, meaning the third line wouldn't appear either.
 
 # Building and running
+
+There are a few changes to how we need to build the application. Assembling the startup code in `startup.s` is not going to change:
+
+```
+arm-none-eabi-as -o startup.o startup.s
+```
+
+The new C source file needs to be compiled, and a few special link options need to be passed to GCC:
+
+```
+arm-none-eabi-gcc -nostdlib -nostartfiles -lgcc -o cstart.o cstart.c
+```
+
+With `-nostdlib` we indicate that we're not using the standard C library, or any other standard libraries that GCC would like to link against. The C standard library provides the very useful standard functions like `printf`, but it also assumes that the system implements certain requirements for those functions. We have nothing of the sort, so we don't link with the C library at all. However, since `-nostdlib` disables all default libraries, we explicitly re-add `libgcc` with the `-lgcc` flag. `libgcc` doesn't provide standard C functions, but instead provides code to deal with CPU or architecture-specific issues. One such issue on ARM is that there is no ARM instruction for division, so the compiler normally has to provide a division routine, which is something GCC does in `libgcc`. We don't really need it now but include it anyway, which is good practice when compiling bare-metal ARM software with GCC.
+
+The `-nostartfiles` option tells GCC to omit standard startup code, since we are providing our own in `startup.s`.
+
+Compilation of `cstart.c` will produce a warning about a missing `_start` symbol. Normally, the startup code (which we skip because of `-nostartfiles`) defines a function called `_start`, but we have the reset handler in `startup.s` and it's the entry point of our program, so everything is fine - and the warning will disappear later when defining proper build targets.
+
+Linking everything to obtain an ELF file has not undergone any changes, except for the addition of `cstart.o`:
+
+```
+arm-none-eabi-ld -T linkscript.ld -o cenv.elf startup.o cstart.o
+```
+
+Even though previously we booted a hang example through U-Boot by using an ELF file directly, now we'll need to go back to using a plain binary, which means calling `objcopy` to convert the ELF file into a binary. Why is this necessary? There's an educational aspect and the practical aspect. From the educational side, having a raw binary is much closer to the situation we would have on real hardware, where the on-board flash memory would be written with the raw binary contents. The practical aspect is that U-Boot's support of ELF files is limited. It can load an ELF into memory and boot it, but U-Boot doesn't handle ELF sections correctly, as it doesn't perform any relocation. When loading an ELF file, U-Boot just copies it to RAM and ignores how the sections should be placed. This creates problems starting with the `.text` section, which will not be in the expected memory location because U-Boot retains the ELF file's header and any padding that might exist between it and `.text`. Workarounds for these problems are possible, but using a binary file is simpler and much more reasonable.
+
+We convert `cenv.elf` into a raw binary as follows:
+
+```
+arm-none-eabi-objcopy -O binary cenv.elf cenv.bin
+```
+
+Finally, when invoking `mkimage` to create the U-Boot image, we specify the binary as the input. After that we can create the SD card image using the same `create-sd.sh` script we made in the previous part.
+
+```
+mkimage -A arm -C none -T kernel -a 0x60000000 -e 0x60000000 -d cenv.bin bare-arm.uimg
+./create-sd.sh sdcard.img bare-arm.uimg
+```
+
+That's it for building the application! All that remains is to run QEMU (remember to specify the right path to the U-Boot binary). One change in the QEMU command-line is that we will now use `-m 512M` to provide the machine with 512 megabytes of RAM. Since we're using RAM to also emulate ROM, we need the memory at `0x60000000` to be accessible, but also the memory at `0x70000000`. With those addresses being 256 megabytes apart, we need to tell QEMU to emulate at least that much memory.
+
+```
+qemu-system-arm -M vexpress-a9 -m 512M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait -kernel ../common_uboot/u-boot -sd sdcard.img -serial stdio
+```
+
+The `-serial stdio` option tells QEMU to emulate the hardware's serial output, which is the UART0 we write to, using the PC's standard I/O. That allows us to see the UART output in the terminal.
+
+Run QEMU as above, and you should see the three lines written to UART by our C code. There's now a real program running on our ARM Versatile Express!

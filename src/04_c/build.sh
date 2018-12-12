@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-arm-none-eabi-as -g -o startup.o startup.s
-arm-none-eabi-gcc -c -g -nodefaultlibs -nostdlib -nostartfiles -o cstart.o cstart.c
+arm-none-eabi-as -o startup.o startup.s
+arm-none-eabi-gcc -nostdlib -nostartfiles -o cstart.o cstart.c
 arm-none-eabi-ld -T linkscript.ld -o cenv.elf startup.o cstart.o
 arm-none-eabi-objcopy -O binary cenv.elf cenv.bin
 
