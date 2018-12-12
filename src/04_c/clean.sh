@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-rm startup.o better-hang.bin better-hang.elf *.img
+rm startup.o cenv.bin cenv.elf *.img

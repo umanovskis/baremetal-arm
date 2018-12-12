@@ -71,12 +71,9 @@ bss_loop:
     strlt r0, [r1], #4
     blt bss_loop
 
-    b _start
+    bl main
+    b Abort_Exception
 
 Abort_Exception:
     swi 0xFF
-
-_start:
-    bl main 
-    b Abort_Exception
 

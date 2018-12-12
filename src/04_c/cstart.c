@@ -21,4 +21,6 @@ int main() {
 		s++;
 	}
 	while (1) {};
+
+	return 0;
 }

@@ -180,3 +180,102 @@ data_loop:
 ```
 
 We begin by preparing some data in registers. We load `_text_end` into `R0`, with `_text_end` being the address in ROM where `.text` has ended and `.data` starts. `_data_start` is the address in RAM at which `.data` should start, and `_data_end` is correspondingly the end address in RAM. Then the loop itself compares `R1` and `R2` registers and, as long as `R1` is smaller (meaning we haven't reached `_data_end`), we first load 4 bytes of data from ROM into `R3`, and then store these bytes at the memory address in `R1`. The `#4` operand in the load and store instructions ensures we're increasing the values in `R0` and `R1` correspondingly so that loop continues over the entirety of `.data` in ROM.
+
+With that done, we also initialize the `.bss` section with this small snippet:
+
+```
+    mov r0, #0
+    ldr r1, =_bss_start
+    ldr r2, =_bss_end
+
+bss_loop:
+    cmp r1, r2
+    strlt r0, [r1], #4
+    blt bss_loop
+```
+
+First we store the value `0` in `R0` and then loop over memory between the addresses `_bss_start` and `_bss_end`, writing `0` to each memory address. Note how this loop is simpler than the one for `.data` - there is no ROM address stored in any registers. This is because there's no need to copy anything from ROM for `.bss`, it's all going to be zeroes anyway. Indeed, the zeroes aren't even stored in the binary because they would just take up space.
+
+## Handing over to C
+
+To summarize, to hand control over to C code, we need to make sure the stack is initialized, and that the memory for modifiable variables is initialized as needed. Now that our startup code handles that, there is no additional magic in how C code is started. It's just a matter of calling the `main` function in C. So we just do that in assembly and that's it:
+
+```
+    bl main
+```
+
+By using the branch-with-link instruction `bl`, we can continue running in case the `main` function returns. However, we don't actually want it to return, as it wouldn't make any sense. We want to continue running our application as long as the hardware is powered on (or QEMU is running), so a bare-metal application will have an infinite loop of some sorts. In case `main` returns, we'll just indicate an error, same as with internal CPU exceptions.
+
+```
+    b Abort_Exception
+
+Abort_Exception:
+    swi 0xFF
+```
+
+And the above branch should never execute.
+
+# Into the C
+
+We're finally ready to leave the complexities of linker scripts and assembly, and write some code in good old C. Create a new file, such as `cstart.c` with the following code:
+
+```
+#include <stdint.h>
+
+volatile uint8_t* uart0 = (uint8_t*)0x10009000;
+
+void write(const char* str)
+{
+	while (*str) {
+		*uart0 = *str++;
+	}
+}
+
+int main() {
+	const char* s = "Hello world from bare-metal!\n";
+	write(s);
+	*uart0 = 'A';
+	*uart0 = 'B';
+	*uart0 = 'C';
+	*uart0 = '\n';
+	while (*s != '\0') {
+		*uart0 = *s;
+		s++;
+	}
+	while (1) {};
+
+    return 0;
+}
+```
+
+The code is simple and just outputs some text through the device's *Universal Asynchronous Receiver-Transmitter* (UART). The next part will discuss writing a UART driver in more detail, so let's not worry about any UART specifics for now, just note that the hardware's UART0 (there are several UARTs) control register is located at `0x10009000`, and that a single character can be printed by writing to that address.
+
+It's pretty clear that the expected output is:
+
+```
+Hello world from bare-metal!
+ABC
+Hello world from bare-metal!
+```
+
+with the first line coming from the call to `write` and the other two being printed from `main`.
+
+The more interesting thing about this code is that it tests the stack, the read-only data section and the regular data section. Let's consider how the different sections would be used when linking the above code.
+
+```
+volatile uint8_t* uart0 = (uint8_t*)0x10009000;
+```
+
+The `uart0` variable is global, not constant, and is initialized with a non-zero value. It will therefore be stored in the `.data` section, which means it will be copied to RAM by our startup code.
+
+```
+const char* s = "Hello world from bare-metal!\n";
+```
+
+Here we have a string, which will be stored in `.rodata` because that's how GCC handles most strings.
+
+And the lines printing individual letters, like `*uart0 = 'A';` shouldn't cause anything to be stored in any of the data sections, they will just be compiled to instructions storing the corresponding character code in a register directly. The line printing `A` will do `mov r2, #0x41` when compiled, with `0x41` or `65` in decimal being the ASCII code for `A`.
+
+Finally, the C code also uses the stack because of the `write` function. If the stack has not been set up correctly, `write` will fail to receive any arguments when called like `write(s)`, so the first line of the expected output wouldn't appear. The stack is also used to allocate the `s` pointer itself, meaning the third line wouldn't appear either.
+
+# Building and running
