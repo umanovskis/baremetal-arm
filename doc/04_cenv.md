@@ -289,14 +289,14 @@ arm-none-eabi-as -o startup.o startup.s
 The new C source file needs to be compiled, and a few special link options need to be passed to GCC:
 
 ```
-arm-none-eabi-gcc -nostdlib -nostartfiles -lgcc -o cstart.o cstart.c
+arm-none-eabi-gcc -c -nostdlib -nostartfiles -lgcc -o cstart.o cstart.c
 ```
 
 With `-nostdlib` we indicate that we're not using the standard C library, or any other standard libraries that GCC would like to link against. The C standard library provides the very useful standard functions like `printf`, but it also assumes that the system implements certain requirements for those functions. We have nothing of the sort, so we don't link with the C library at all. However, since `-nostdlib` disables all default libraries, we explicitly re-add `libgcc` with the `-lgcc` flag. `libgcc` doesn't provide standard C functions, but instead provides code to deal with CPU or architecture-specific issues. One such issue on ARM is that there is no ARM instruction for division, so the compiler normally has to provide a division routine, which is something GCC does in `libgcc`. We don't really need it now but include it anyway, which is good practice when compiling bare-metal ARM software with GCC.
 
 The `-nostartfiles` option tells GCC to omit standard startup code, since we are providing our own in `startup.s`.
 
-Compilation of `cstart.c` will produce a warning about a missing `_start` symbol. Normally, the startup code (which we skip because of `-nostartfiles`) defines a function called `_start`, but we have the reset handler in `startup.s` and it's the entry point of our program, so everything is fine - and the warning will disappear later when defining proper build targets.
+We're also providing the `-c` switch to stop after the compilation phase. We don't want GCC to use its default linker script, and we'll perform the linking in the next step with `ld`. Later, when defining proper build targets, this will become streamlined.
 
 Linking everything to obtain an ELF file has not undergone any changes, except for the addition of `cstart.o`:
 
