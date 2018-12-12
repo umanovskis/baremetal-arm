@@ -23,8 +23,6 @@ sudo mkfs.ext2 /dev/nbd0p1
 mkdir tmp || true
 sudo mount -o user /dev/nbd0p1 tmp/
 sudo cp "$UIMGNAME" tmp/
-sudo cp cenv.elf tmp/
-sudo cp cenv.bin tmp/
 sudo umount /dev/nbd0p1
 rmdir tmp || true
 sudo qemu-nbd -d /dev/nbd0
