@@ -322,9 +322,54 @@ mkimage -A arm -C none -T kernel -a 0x60000000 -e 0x60000000 -d cenv.bin bare-ar
 That's it for building the application! All that remains is to run QEMU (remember to specify the right path to the U-Boot binary). One change in the QEMU command-line is that we will now use `-m 512M` to provide the machine with 512 megabytes of RAM. Since we're using RAM to also emulate ROM, we need the memory at `0x60000000` to be accessible, but also the memory at `0x70000000`. With those addresses being 256 megabytes apart, we need to tell QEMU to emulate at least that much memory.
 
 ```
-qemu-system-arm -M vexpress-a9 -m 512M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait -kernel ../common_uboot/u-boot -sd sdcard.img -serial stdio
+qemu-system-arm -M vexpress-a9 -m 512M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait -kernel ../common_uboot/u-boot -sd sdcard.img
 ```
 
-The `-serial stdio` option tells QEMU to emulate the hardware's serial output, which is the UART0 we write to, using the PC's standard I/O. That allows us to see the UART output in the terminal.
-
 Run QEMU as above, and you should see the three lines written to UART by our C code. There's now a real program running on our ARM Versatile Express!
+
+# Bonus: exploring the ELF file
+
+Dealing with linker scripts, ELF sections and relocations can be difficult. One indispensable tool is `objdump`, capable of displaying all kinds of information about object files, as well as disassembling them. Let's look at some of the useful commands to run on our `cenv.elf`. First is the `-h` option, which summarizes sections headers.
+
+```
+arm-none-eabi-objdump -h cenv.elf
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         000001ea  60000000  60000000  00010000  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .data         00000008  70000000  600001ea  00020000  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .bss          00000000  70000008  600001f2  00020008  2**0
+                  ALLOC
+```
+
+Of particular interest are the load address (LMA), which indicates where the section would be in ROM, and the virtual address (VMA), which indicates where the section would be during runtime, which in our case means RAM. We can also look at the contents of an individual section. Suppose we want to know what's in `.data`:
+
+```
+arm-none-eabi-objdump -s -j .data cenv.elf
+
+Contents of section .data:
+ 70000000 00900010 00000000                    ........        
+```
+
+The `70000000` in the beginning is the address, and then we see the actual data - `00900010` can be recognized as the little-endian 4-byte encoding of `0x10009000`, the address of UART0.
+
+Running `objdump` with the `-t` switch shows the symbol table, so for `arm-none-eabi-objdump -t cenv.elf` we would see quite a bit of output, some of it containing:
+
+```
+00000011 l       *ABS*	00000000 MODE_FIQ
+00000012 l       *ABS*	00000000 MODE_IRQ
+00000013 l       *ABS*	00000000 MODE_SVC
+60000034 l       .text	00000000 fiq_loop
+6000004c l       .text	00000000 irq_loop
+600001ea g       .text	00000000 _text_end
+70000008 g       .bss	00000000 _bss_start
+00001000 g       *ABS*	00000000 _fiq_stack_size
+70000008 g       .bss	00000000 _bss_end
+600000dc g     F .text	00000054 write
+```
+
+You can see how smybols defined in the assembly, C function names and linker-exported symbols are all available in the output.
+
+Finally, running `arm-none-eabi-objdump -d cenv.elf` will disassemble the code, something that usually ends up being necessary at some point in low-level embedded development.
