@@ -12,13 +12,12 @@ project (bare-metal-arm C ASM)
 set(CMAKE_C_COMPILER "arm-none-eabi-gcc")
 set(CMAKE_ASM_COMPILER "arm-none-eabi-as")
 set(CMAKE_OBJCOPY "arm-none-eabi-objcopy")
-set(CMAKE_ASM_OUTPUT_EXTENSION ".o")
 
 file(GLOB LINKSCRIPT "src/linkscript.ld")
 set(ASMFILES src/startup.s)
 set(SRCLIST src/cstart.c)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostartfiles -nostdlib -Wall")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostartfiles -nostdlib -g -Wall")
 set(CMAKE_EXE_LINKER_FLAGS "-T ${LINKSCRIPT}")
 
 add_custom_target(u-boot 
