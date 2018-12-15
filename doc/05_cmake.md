@@ -147,3 +147,67 @@ and QEMU will run our program. Far more convenent than what we had been doing.
 
 If you run QEMU with `make run` and then terminate it with Ctrl-C, you'll get messages about the target having failed. This is harmless but doesn't look nice. Instead, you can cleanly quit QEMU with Ctrl-A, X (that is Ctrl-A first and then X without the Ctrl key). It's a feature of the QEMU monitor, and works because of adding `-serial mon:stdio` to the QEMU command-line.
 ---
+
+# Debugging in QEMU with GDB
+
+While the QEMU monitor provides many useful features, it's not a proper debugger. When running software on a PC through QEMU, as opposed to running on real hardware, it would be a waste not to take advantage of the superior debug capabilities available. We can debug our bare-metal program using the GDB, the GNU debugger. GDB provides remote debugging capabilities, with a server called `gdbserver` running on the machine to be debugged, and then the main `gdb` client communicatng with the server. QEMU is able to start an instance of `gdbserver` along with the program it's emulating, so remote debugging is a possibility with QEMU and GDB.
+
+Starting `gdbserver` when running QEMU is as easy as adding `-gdb tcp::2159` to the QEMU command line (2159 is the standard port for GDB remote debugging). Given that we're using CMake, we can use it to define a new target for a debug run of QEMU. These are the additions in `CMakeLists.txt`:
+
+
+```
+string(CONCAT GDBSCRIPT "target remote localhost:2159\n"
+                        "file bare-metal.elf")
+file(WRITE ${CMAKE_BINARY_DIR}/gdbscript ${GDBSCRIPT})
+
+add_custom_target(drun)
+add_custom_command(TARGET drun PRE_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan
+                    "To connect the debugger, run arm-none-eabi-gdb -x gdbscript")
+add_custom_command(TARGET drun PRE_BUILD COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan
+                    "To start execution, type continue in gdb")
+
+add_custom_command(TARGET drun POST_BUILD COMMAND 
+                 qemu-system-arm -S -M vexpress-a9 -m 512M -no-reboot -nographic -gdb tcp::2159
+                 -monitor telnet:127.0.0.1:1234,server,nowait -kernel ${UBOOT_PATH}/u-boot -sd sdcard.img -serial mon:stdio
+                 COMMENT "Running QEMU with debug server...")
+```
+
+The `drun` target (for *debug run*) adds `-gdb tcp::2159` to start `gdbserver`, and `-S`, which tells QEMU not to start execution after loading. That option is useful for debugging because it gives you the time to set breakpoints, letting you debug the code very early if you need to.
+
+When debugging remotely, GDB needs to know what server to connect to, and where to get the debug symbols. We can connect using the GDB command `target remote localost:2159` and then load the ELF file using `file bare-metal.elf`. To avoid typing those commands manually all the time, we ask CMake to put them into a file called `gdbscript` that GDB can read when started.
+
+Let's rebuild and try a quick debug session.
+
+```
+cmake -S . -Bbuild
+cd build
+make
+make drun
+```
+
+You should see CMake print some hints that we provided, and then QEMU will wait doing nothing. In another terminal now, you can start GDB from the `build` folder, telling it to read commands from the `gdbscript` file:
+
+```
+arm-none-eabi-gdb -x gdbscript
+```
+
+Now you have GDB running and displaying `(gdb)`, its command prompt. You can set a breakpoint using the `break` command, let's try to set one in the `main` function, and then continue execution with `c` (short for `continue`):
+
+```
+(gdb) break main
+(gdb) c
+```
+
+As soon as you issue the `c` command, you'll see QEMU running. After U-Boot output, it will stop again, and GDB will show that it hit a breakpoint, something like the following:
+
+```
+Breakpoint 1, main () at /some/path/to/repo/src/05_cmake/src/cstart.c:13
+13              const char* s = "Hello world from bare-metal!\n";
+
+```
+
+From there, you can use the `n` command to step through the source code, `info stack` to see the stack trace, and any other GDB commands.
+
+I won't be covering GDB in additional detail here, that's outside the scope of these tutorials. GDB has a comprehensive, if overwhelming, manual, and there's a lot more material available online. [Beej's guide to GDB](https://beej.us/guide/bggdb/), authored by Brian Hall, is perhaps the best getting-started guide for GDB. If you'd rather use a graphical front-end, there is also a large selection. When looking for GDB-related information online, don't be alarmed if you find old articles - GDB dates back to the 1980s, and while it keeps getting new features, the basics haven't changed in a very long time.
+
+Our project now has a half-decent build system, we are no longer relying on manual steps, and can debug our program. This is a good place to continue from!
