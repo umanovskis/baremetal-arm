@@ -92,7 +92,7 @@ Looking at the table, we can define it in code as follows:
 typedef volatile struct __attribute__((packed)) {
     uint32_t DR;                /* 0x0 Data Register */
     uint32_t RSRECR;            /* 0x4 Receive status / error clear register */
-    uint32_t _reserved0[4];         /* 0x8 - 0x14 reserved */
+    uint32_t _reserved0[4];     /* 0x8 - 0x14 reserved */
     const uint32_t FR;          /* 0x18 Flag register */
     uint32_t _reserved1;        /* 0x1C reserved */
     uint32_t ILPR;              /* 0x20 Low-power counter register */
@@ -103,4 +103,22 @@ typedef volatile struct __attribute__((packed)) {
 } uart_registers;
 ```
 
-There are several things to note about the code. One is that it uses fixed-size types like `uint32_t`. 
+There are several things to note about the code. One is that it uses fixed-size types like `uint32_t`. Since the C99 standard was adopted, C has included the `stdint.h` header that defines exact-width integer types. So `uint32_t` is guaranteed to be a 32-bit type, as opposed to `unsigned int`, for which there is no guaranteed fixed size. The layout and size of the SFRs is fixed, as described in the manual, so the struct has to match in terms of field sizes.
+
+For the same reason, `__attribute__((packed))` is provided. Normally, the compiler is allowed to insert padding between struct fields in order to align the whole struct to some size suited for the architecture. Consider the following example:
+
+```
+typedef struct {
+    char a; /* 1 byte */
+    int b;  /* 4 bytes */
+    char c; /* 1 byte */
+} example;
+```
+
+If you compile that struct for a typical x86 system where `int` is 4 bytes, the compiler will probably try to align the struct to a 4-byte boundary, and align the individual members to such a boundary as well, inserting 3 bytes after `a` and another 3 bytes after `c`, giving the struct a total size of 12 bytes.
+
+When working with SFRs, we definitely don't want the compiler to insert any padding bytes or take any other liberties with the code. `__attribute__((packed))` is a GCC attribute (also recognized by some other compilers like clang) that tells the compiler to use the struct as it is written, using the least amount of memory possible to represent it. Forcing structs to be packed is generally not a great idea when working with "normal" data, but it's very good practice for structs that represent SFRs.
+
+Sometimes there might be reserved memory locations between various registers. In our case of the PL011 UART, there are reserved bytes between the `RSRECR` and `FR` registers, and four more after `FR`. There's no general way in C to mark such struct fields as unusable, so giving them names like `_reserved0` indicates the purpose. In our struct definition, we define `uint32_t _reserved0[4];` to skip 16 bytes, and `uint32_t _reserved1;` to skip another 4 bytes later.
+
+Some SFRs are read-only, like the `FR`, in which case it's helpful to declare the corresponding field as `const`. Attempts to write a read-only register would fail anyway (the register would remain unchanged), but marking it as `const` lets the compiler check for attempts to write the register.
