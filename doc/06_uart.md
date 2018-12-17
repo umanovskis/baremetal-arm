@@ -84,7 +84,7 @@ Now we have a rough outline of what we need to implement. We will need code to s
 
 We know by now that programming the UART will be done by accessing the SFRs. It is possible, of course, to access the memory locations directly, but a better way is to define a C struct that reflects what the SFRs look like. We again refer to the PL011 manual for the register summary. It begins like this:
 
-![PL011 register summary](doc/images/06_regsummary.png)
+![PL011 register summary](images/06_regsummary.png)
 
 Looking at the table, we can define it in code as follows:
 
