@@ -12,8 +12,8 @@ SECTIONS
 {
     .text : {
         startup.o (.vector_table)
-        *(.text)
-        *(.rodata)
+        *(.text*)
+        *(.rodata*)
      } > ROM
     _text_end = .;
     .data : AT(ADDR(.text) + SIZEOF(.text))
