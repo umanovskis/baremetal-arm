@@ -13,7 +13,7 @@ SECTIONS
     .text : {
         *(.vector_table)
         *(.text*)
-        *(.rodata)
+        *(.rodata*)
      } > ROM
     _text_end = .;
     .data : AT(ADDR(.text) + SIZEOF(.text))

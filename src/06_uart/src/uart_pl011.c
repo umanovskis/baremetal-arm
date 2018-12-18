@@ -26,46 +26,53 @@ uart_error uart_configure(uart_config* config) {
 
     /* Set baudrate */
     double intpart, fractpart;
-    double baudrate_divisor = refclock / (16u * config->baudrate);
+    double baudrate_divisor = (double)refclock / (16u * config->baudrate);
     fractpart = modf(baudrate_divisor, &intpart);
 
     uart0->IBRD = (uint16_t)intpart;
     uart0->FBRD = (fractpart * 64u) + 0.5;
 
+    uint32_t lcrh = 0u;
+
     /* Set data word size */
     switch (config->data_bits)
     {
     case 5:
-        uart0->LCRH |= LCRH_WLEN_5BITS;
+        lcrh |= LCRH_WLEN_5BITS;
         break;
     case 6:
-        uart0->LCRH |= LCRH_WLEN_6BITS;
+        lcrh |= LCRH_WLEN_6BITS;
         break;
     case 7:
-        uart0->LCRH |= LCRH_WLEN_7BITS;
+        lcrh |= LCRH_WLEN_7BITS;
         break;
     case 8:
-        uart0->LCRH |= LCRH_WLEN_8BITS;
+        lcrh |= LCRH_WLEN_8BITS;
         break;
     }
 
     /* Set parity. If enabled, use even parity */
     if (config->parity) {
-        uart0->LCRH |= LCRH_PEN;
-        uart0->LCRH |= LCRH_EPS;
-        uart0->LCRH |= LCRH_SPS;
+        lcrh |= LCRH_PEN;
+        lcrh |= LCRH_EPS;
+        lcrh |= LCRH_SPS;
     } else {
-        uart0->LCRH &= ~LCRH_PEN;
-        uart0->LCRH &= ~LCRH_EPS;
-        uart0->LCRH &= ~LCRH_SPS;
+        lcrh &= ~LCRH_PEN;
+        lcrh &= ~LCRH_EPS;
+        lcrh &= ~LCRH_SPS;
     }
 
     /* Set stop bits */
     if (config->stop_bits == 1u) {
-        uart0->LCRH &= ~LCRH_STP2;
+        lcrh &= ~LCRH_STP2;
     } else if (config->stop_bits == 2u) {
-        uart0->LCRH |= LCRH_STP2;
+        lcrh |= LCRH_STP2;
     }
+
+    /* Enable FIFOs */
+    lcrh |= LCRH_FEN;
+
+    uart0->LCRH = lcrh;
 
     /* Enable the UART */
     uart0->CR |= CR_UARTEN;
@@ -74,11 +81,26 @@ uart_error uart_configure(uart_config* config) {
 }
 
 void uart_putchar(char c) {
+    while (uart0->FR & FR_TXFF);
     uart0->DR = c;
 }
 
 void uart_write(const char* data) {
     while (*data) {
-        uart0->DR = *data++;
+        uart_putchar(*data++);
     }
+}
+
+uart_error uart_getchar(char* c) {
+    if (uart0->FR & FR_RXFE) {
+        return UART_NO_DATA;
+    }
+
+    *c = uart0->DR & DR_DATA_MASK;
+    if (uart0->RSRECR & RSRECR_ERR_MASK) {
+        /* The character had an error */
+        uart0->RSRECR &= RSRECR_ERR_MASK;
+        return UART_RECEIVE_ERROR;
+    }
+    return UART_OK;
 }
