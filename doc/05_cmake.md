@@ -9,14 +9,13 @@ It should also be noted here that I am far from a CMake expert, and build system
 To begin with, we'll organize our project folder with some subfolders, and create a top-level `CMakeLists.txt`, which is the input file CMake normally expects. The better-organized project structure looks like this:
 
 ```
-├── CMakeLists.txt
-├── scripts
-│   └── create-sd.sh
-└── src
-    ├── cstart.c
-    ├── linkscript.ld
-    └── startup.s
-
+|-- CMakeLists.txt
+|-- scripts
+|   `-- create-sd.sh
+`-- src
+    |-- cstart.c
+    |-- linkscript.ld
+    `-- startup.s
 ```
 
 The `src` folder contains all the source code, the `scripts` folder is for utility scripts like the one creating our SD card image, and at the top there's `CMakeLists.txt`.
@@ -143,6 +142,7 @@ make run
 and QEMU will run our program. Far more convenent than what we had been doing.
 
 ---
+
 **HINT**
 
 If you run QEMU with `make run` and then terminate it with Ctrl-C, you'll get messages about the target having failed. This is harmless but doesn't look nice. Instead, you can cleanly quit QEMU with Ctrl-A, X (that is Ctrl-A first and then X without the Ctrl key). It's a feature of the QEMU monitor, and works because of adding `-serial mon:stdio` to the QEMU command-line.
