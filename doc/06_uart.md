@@ -221,6 +221,7 @@ Assuming that `b` is one bit,
 `x & b` checks if `b` is set
 
 One bit in position `n` can be conveniently written as `1` left-shifted `n` places. E.g. bit 4 is `1 << 4` and bit 0 is `1 << 0`
+
 ---
 
 Next we configure the UART's baudrate. This is another operation that translates to fairly simple code, but requires a careful reading of the manual. To obtain a certain baudrate, we need to divide the (input) reference clock with a certain divisor value. The divisor value is stored in two SFRs, `IBRD` for the integer part and `FBRD` for the fractional part. Accordig to the manual, `baudrate divisor = reference clock / (16 * baudrate)`. The integer part of that result is used directly, and the fractional part needs to be converted to a 6-bit number `m`, where `m = integer((fractional part * 64) + 0.5)`. We can translate that into C code as follows:
@@ -352,39 +353,42 @@ static void parse_cmd(void) {
     if (!strncmp("help\r", buf, strlen("help\r"))) {
         uart_write("Just type and see what happens!\n");
     } else if (!strncmp("uname\r", buf, strlen("uname\r"))) {
-        uart_write("Just type and see what happens!\n");
+        uart_write("bare-metal arm 06_uart\n");
     }
 }
 
 int main() {
-	uart_config config = {
-		.data_bits = 8,
-		.stop_bits = 1,
-		.parity = false,
-		.baudrate = 9600
-	};
-	uart_configure(&config);
-	uart_putchar('A');
-	uart_putchar('B');
-	uart_putchar('C');
-	uart_putchar('\n');
-	uart_write("I love drivers!\n");
-	uart_write("Type below...\n");
-	while (1) {
-        char c;
-        if (uart_getchar(&c) == UART_OK) {
-            uart_putchar(c);
-            buf[buf_idx % 64] = c;
-            buf_idx++;
-            if (c == '\r') {
-                uart_write("\n");
-                buf_idx = 0u;
-                parse_cmd();
+        uart_config config = {
+            .data_bits = 8,
+            .stop_bits = 1,
+            .parity = false,
+            .baudrate = 9600
+        };
+        uart_configure(&config);
+
+        uart_putchar('A');
+        uart_putchar('B');
+        uart_putchar('C');
+        uart_putchar('\n');
+
+        uart_write("I love drivers!\n");
+        uart_write("Type below...\n");
+
+        while (1) {
+            char c;
+            if (uart_getchar(&c) == UART_OK) {
+                uart_putchar(c);
+                buf[buf_idx % 64] = c;
+                buf_idx++;
+                if (c == '\r') {
+                    uart_write("\n");
+                    buf_idx = 0u;
+                    parse_cmd();
+                }
             }
         }
-    }
 
-	return 0;
+        return 0;
 }
 ```
 
