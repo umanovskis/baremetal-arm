@@ -22,9 +22,9 @@ It should take some time as the QEMU machine spins up, after which it should cra
 
 That's it for the first step - now you have a command to start an ARM system, although it will not do anything except crashing with a message like `qemu-system-arm: Trying to execute code outside RAM or ROM at 0x04000000`.
 
-# The first hang
+## The first hang
 
-## Writing some code
+### Writing some code
 
 Now we want to write some code, turn it into an executable that can run on an ARM system, and run it in QEMU. This will also serve as our first cross-compilation attempt, so let's go with the simplest code possible - we will write a value to one of the CPU registers, and then enter an infinite loop, letting our (emulated) hardware hang indefinitely. Since we're doing bare-metal programming and have no form of runtime or operating system, we have to write the code in assembly language. Create a file called `startup.s` and write the following code:
 
@@ -91,11 +91,11 @@ R00=00000000 R01=000008e0 R02=deadbeef R03=00000000
 
 This means that yes indeed, QEMU has successfully executed the code we wrote. Not at all fancy, but it worked. We have our first register write and hang.
 
-# What we did wrong
+## What we did wrong
 
 Our code worked, but even in this small example we didn't really do things the right way.
 
-## Memory mappings
+### Memory mappings
 
 One issue is that we didn't explicitly specify any start symbol that would show where our program should begin executing. It works because when the CPU starts up, it begins executing from address `0x0`, and we have placed a valid instruction at that address. But it could easily go wrong. Consider this variation of `startup.s`, where we move the third line to the beginning.
 
@@ -174,7 +174,7 @@ SECTIONS
 
 This script tells the linker that the program's entry point is at the global symbol `_Entry`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
 
-# Hanging again - but better
+## Hanging again - but better
 
 We can now build the updated software. Let's do that in a similar manner to before:
 

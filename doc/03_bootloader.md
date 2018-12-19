@@ -113,6 +113,7 @@ to create an image called `sdcard.img` and copy the `bare-arm.uimg` uImage onto 
 **NOTE**
 
 Depending on your system, you might get an error about `/dev/nbd0` being unavailable when you run the SD card creation script. The most likely cause of such an error is that you don't have the `nbd` kernel module loaded. Loading it with `sudo modprobe nbd` should create `/dev/nbd0`. To permanently add the module to the load list, you can do `echo "nbd" | sudo tee -a /etc/modules`
+
 ---
 
 ## Creating the uImage

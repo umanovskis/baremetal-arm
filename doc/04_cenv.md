@@ -4,9 +4,9 @@ In this part, we will do some significant work to get a proper application up an
 
 We are now going to write startup code that prepares a C environment and runs the `main` function in C. This will require setting up the stack and also handling data relocation, that is, copying some data from ROM to RAM. The first C code that we run will print some strings to the terminal by accessing the UART peripheral device. This isn't really using a proper driver, but performing some UART prints is a very good way of seeing that things are working properly.
 
-# New startup code
+## New startup code
 
-## Setting up the stack
+### Setting up the stack
 
 Our startup code is getting a major rework. It will do several new and exciting things, the most basic of which is to prepare the stack. C code will not execute properly without a stack, which is necessary among other things to have working function calls.
 
@@ -93,9 +93,9 @@ This is the loop that actually fills the stack with `0xFEFEFEFE`. First it compa
 
 Once the loop is over and the FIQ stack is ready, we repeat the process with the IRQ stack, and finally the supervisor mode stack (see the code in the full listing of `startup.s` at the end).
 
-## Handling sections and data
+### Handling sections and data
 
-### A rundown on sections
+#### A rundown on sections
 
 To get the next steps right, we have to understand the main segments that a program normally contains, and how they normally appear in ELF file sections.
 
@@ -111,7 +111,7 @@ Thinking now about our program being stored in some kind of read-only memory, li
 
 Most embedded programs need to take care of ROM-to-RAM data copying. The specifics depend on the hardware and the use case. On larger, more capable single-board computers, like the popular Raspberry Pi series, it's reasonable to copy even the code (`.text` section) to RAM and run from RAM because of the performance benefits as opposed to reading the ROM. On microcontrollers, copying the code to RAM isn't even an option much of the time, as a typical ARM-based microcontroller using a Cortex-M3 CPU or similar might have around 1 megabyte flash memory but only 96 kilobytes of RAM.
 
-### New section layout
+#### New section layout
 
 Previously we had written `linkscript.ld`, a small linker script. Now we will need a more complete linker script that will define the data sections as well. It will also need to export the start and end addresses of sections so that copying code can use them, and finally, the linker script will also export some symbols for the stack, like the `_fiq_stack_start` that we used in our stack setup code.
 
@@ -165,7 +165,7 @@ The `.text` section is similar to what we had before, but we're also going to ap
 
 `.bss` is handled in a similar manner, linking it to RAM and exporting the start and end addresses.
 
-### Copying ROM to RAM
+#### Copying ROM to RAM
 
 As discussed, we need to copy the `.data` section from ROM to RAM in our startup code. Thanks to the linker script, we know where `.data` starts in ROM, and where it should start and end in RAM, which is all the information we need to perform the copying. In `startup.s`, after dealing with the stacks we now have the following code:
 
@@ -199,7 +199,7 @@ bss_loop:
 
 First we store the value `0` in `R0` and then loop over memory between the addresses `_bss_start` and `_bss_end`, writing `0` to each memory address. Note how this loop is simpler than the one for `.data` - there is no ROM address stored in any registers. This is because there's no need to copy anything from ROM for `.bss`, it's all going to be zeroes anyway. Indeed, the zeroes aren't even stored in the binary because they would just take up space.
 
-## Handing over to C
+### Handing over to C
 
 To summarize, to hand control over to C code, we need to make sure the stack is initialized, and that the memory for modifiable variables is initialized as needed. Now that our startup code handles that, there is no additional magic in how C code is started. It's just a matter of calling the `main` function in C. So we just do that in assembly and that's it:
 
@@ -218,7 +218,7 @@ Abort_Exception:
 
 And the above branch should never execute.
 
-# Into the C
+## Into the C
 
 We're finally ready to leave the complexities of linker scripts and assembly, and write some code in good old C. Create a new file, such as `cstart.c` with the following code:
 
@@ -281,7 +281,7 @@ And the lines printing individual letters, like `*uart0 = 'A';` shouldn't cause 
 
 Finally, the C code also uses the stack because of the `write` function. If the stack has not been set up correctly, `write` will fail to receive any arguments when called like `write(s)`, so the first line of the expected output wouldn't appear. The stack is also used to allocate the `s` pointer itself, meaning the third line wouldn't appear either.
 
-# Building and running
+## Building and running
 
 There are a few changes to how we need to build the application. Assembling the startup code in `startup.s` is not going to change:
 
@@ -330,7 +330,7 @@ qemu-system-arm -M vexpress-a9 -m 512M -no-reboot -nographic -monitor telnet:127
 
 Run QEMU as above, and you should see the three lines written to UART by our C code. There's now a real program running on our ARM Versatile Express!
 
-# Bonus: exploring the ELF file
+## Bonus: exploring the ELF file
 
 Dealing with linker scripts, ELF sections and relocations can be difficult. One indispensable tool is `objdump`, capable of displaying all kinds of information about object files, as well as disassembling them. Let's look at some of the useful commands to run on our `cenv.elf`. First is the `-h` option, which summarizes sections headers.
 

@@ -8,7 +8,7 @@ The first prerequisite is getting a Linux system up and running. Hopefully you a
 
 If you are running Windows and want to run a virtual Linux, [VirtualBox](http://www.virtualbox.org) is recommended. As for Linux distributions, any modern distribution should be fine, although in some cases you might need to install software manually. I use Linux Mint Debian Edition, and double-check most of the work in a virtual machine running Ubuntu, which is the most popular Linux distribution for beginners. 
 
-## Qemu
+## QEMU
 
 To emulate an ARM machine, we will be using [QEMU](http://www.qemu.org), a powerful emulation and virtualization tool that works with a variety of architectures. While the code we write should eventually be able to boot on a real ARM device, it is much easier to start with an emulator. Why?
 
