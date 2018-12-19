@@ -7,16 +7,15 @@ char buf[64];
 uint8_t buf_idx = 0u;
 
 static void parse_cmd(void) {
-    if (!strncmp("help", buf, strlen("help"))) {
+    if (!strncmp("help\r", buf, strlen("help\r"))) {
         uart_write("Just type and see what happens!\n");
-    } else if (!strncmp("uname", buf, strlen("uname"))) {
+    } else if (!strncmp("uname\r", buf, strlen("uname\r"))) {
         uart_write("bare-metal arm 06_uart\n");
     }
 }
 
 
 int main() {
-	uart_init();
 	uart_config config = {
 		.data_bits = 8,
 		.stop_bits = 1,

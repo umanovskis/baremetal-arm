@@ -6,8 +6,6 @@ static uart_registers* uart0 = (uart_registers*)0x10009000u;
 const uint32_t refclock = 24000000u; /* 24 MHz */
 
 uart_error uart_init(void) {
-    while (uart0->FR & FR_BUSY);
-    uart0->LCRH &= ~LCRH_FEN;
 
     return UART_OK;
 }
@@ -23,6 +21,11 @@ uart_error uart_configure(uart_config* config) {
     if (config->baudrate < 110u || config->baudrate > 460800u) {
         return UART_INVALID_ARGUMENT_BAUDRATE;
     }
+    /* Disable the UART */
+    uart0->CR &= ~CR_UARTEN;
+    /* Finish any current transmission, and flush the FIFO */
+    while (uart0->FR & FR_BUSY);
+    uart0->LCRH &= ~LCRH_FEN;
 
     /* Set baudrate */
     double intpart, fractpart;
@@ -30,7 +33,7 @@ uart_error uart_configure(uart_config* config) {
     fractpart = modf(baudrate_divisor, &intpart);
 
     uart0->IBRD = (uint16_t)intpart;
-    uart0->FBRD = (fractpart * 64u) + 0.5;
+    uart0->FBRD = (uint8_t)((fractpart * 64u) + 0.5);
 
     uint32_t lcrh = 0u;
 
