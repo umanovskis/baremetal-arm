@@ -130,3 +130,264 @@ static uart_registers* uart0 = (uart_registers*)0x10009000u;
 ```
 
 A possible alternative to the above would be to declare a macro that would point to the SFRs, such as `#define UART0 ((uart_registers*)0x10009000u)`. That choice is largely a matter of preference.
+
+## Initializing and configuring the UART
+
+Let's now write `uart_configure()`, which will initialize and configure the UART. For some drivers you might want a separate `init` function, but a `uart_init()` here wouldn't make much sense, the device is quite simple. The functionitself is not particularly complex either, but can showcase some patterns.
+
+First we need to define a couple of extra types. For the return type, we want something that can indicate failure or success. It's very useful for functions to be able to indicate success or failure, and driver functions can often fail in many ways. Protecting against possible programmer errors is of particular interest - it's definitely possible to use the driver incorrectly! So one of the approaches is to define error codes for each driver (or each driver type perhaps), like the following:
+
+```
+typedef enum {
+        UART_OK = 0,
+        UART_INVALID_ARGUMENT_BAUDRATE,
+        UART_INVALID_ARGUMENT_WORDSIZE,
+        UART_INVALID_ARGUMENT_STOP_BITS,
+        UART_RECEIVE_ERROR,
+        UART_NO_DATA
+} uart_error;
+```
+
+A common convention is to give the success code a value of `0`, and then we add some more error codes to the enumeration. Let's use this `uart_error` type as the return type for our configuration function.
+
+Then we need to pass some configuration to the driver, in order to set the baud rate, word size, etc. One possibility is to define the following struct describing a config:
+
+```
+typedef struct {
+    uint8_t     data_bits;
+    uint8_t     stop_bits;
+    bool        parity;
+    uint32_t    baudrate;
+} uart_config;
+```
+
+This approach, of course, dictates that `uart_configure` would take a parameter of the `uart_config` type, giving us:
+
+```
+uart_error uart_configure(uart_config* config)
+```
+
+There are other possible design choices. You could omit the struct, and just pass in multiple parameters, like `uart_configure(uint8_t data_bits, uint8_t stop_bits, bool parity, unit32_t baudrate)`. I prefer a struct because those values logically belong together. Yet another option would be to have separate functions per parameter, such as `uart_set_baudrate` and `uart_set_data_bits`, but I think that is a weaker choice, as it can create issues with the order in which those functions are called.
+
+On to the function body. You can see the entire source in the [corresponding file for this chapter](../src/06_uart/src/uart_pl011.c), and here I'll go through it block by block.
+
+First, we perform some validation of the configuration, returning the appropriate error code if some parameter is outside the acceptable range.
+
+```
+    if (config->data_bits < 5u || config->data_bits > 8u) {
+        return UART_INVALID_ARGUMENT_WORDSIZE;
+    }
+    if (config->stop_bits == 0u || config->stop_bits > 2u) {
+        return UART_INVALID_ARGUMENT_STOP_BITS;
+    }
+    if (config->baudrate < 110u || config->baudrate > 460800u) {
+        return UART_INVALID_ARGUMENT_BAUDRATE;
+    }
+```
+
+UART only allows 5 to 8 bits as the data size, and the only choices for the stop bit is to have one or two. For the baudrate check, we just constrain the baudrate to be between two standard values.
+
+With validation done, the rest of the function essentially follows the PL011 UART's manual for how to configure it. First the UART needs to be disabled, allowed to finish an ongoing transmission, if any, and its transmit FIFO should be flushed. Here's the code:
+
+```
+    /* Disable the UART */
+    uart0->CR &= ~CR_UARTEN;
+    /* Finish any current transmission, and flush the FIFO */
+    while (uart0->FR & FR_BUSY);
+    uart0->LCRH &= ~LCRH_FEN;
+```
+
+Having a similar `while` loop is common in driver code when waiting on some hardware process. In this case, the PL011's `FR` has a BUSY bit that indicates if a transmission is ongoing. Setting the FEN bit in `LCRH` to `0` is the way to flush the transmit queue.
+
+What about all those defines like `CR_UARTEN` in the lines above though? Here they are from the corresponding header file:
+
+```
+#define FR_BUSY         (1 << 3u)
+#define LCRH_FEN        (1 << 4u)
+#define CR_UARTEN       (1 << 0u)
+```
+
+Typically, one SFR has many individual settings, with one setting often using just one or two bits. The locations of the bits are always in the corresponding manual, but using them directly doesn't make for the most readable code. Consider `uart0->CR &= ~(1u)` or `while (uart0->FR & (1 << 3u))`. Any time you read such a line, you'd have to refer to the manual to check what the bit or mask means. Symbolic names make such code much more readable, and here I use the pattern of `SFRNAME_BITNAME`, so `CR_UARTEN` is the bit called `UARTEN` in the `CR` SFR. I won't include more of those defines in this chapter, but they're all in the [full header file](../src/06_uart/src/uart_pl011.h).
+
+---
+**NOTE**
+
+Bit manipulation is usually a very important part of driver code, such as the above snippet. Bitwise operators and shift operators are a part of C, and I won't be covering them here. Hopefully you're familiar enough with bit manipulation to read the code presented here. Just in case though, this cheat sheet might be handy:
+
+Assuming that `b` is one bit,
+
+`x |= b` sets bit `b` in `x`
+`x &= ~b` clears bit `b` in `x`
+`x & b` checks if `b` is set
+
+One bit in position `n` can be conveniently written as `1` left-shifted `n` places. E.g. bit 4 is `1 << 4` and bit 0 is `1 << 0`
+---
+
+Next we configure the UART's baudrate. This is another operation that translates to fairly simple code, but requires a careful reading of the manual. To obtain a certain baudrate, we need to divide the (input) reference clock with a certain divisor value. The divisor value is stored in two SFRs, `IBRD` for the integer part and `FBRD` for the fractional part. Accordig to the manual, `baudrate divisor = reference clock / (16 * baudrate)`. The integer part of that result is used directly, and the fractional part needs to be converted to a 6-bit number `m`, where `m = integer((fractional part * 64) + 0.5)`. We can translate that into C code as follows:
+
+```
+    double intpart, fractpart;
+    double baudrate_divisor = (double)refclock / (16u * config->baudrate);
+    fractpart = modf(baudrate_divisor, &intpart);
+
+    uart0->IBRD = (uint16_t)intpart;
+    uart0->FBRD = (uint8_t)((fractpart * 64u) + 0.5);
+```
+
+It's possible to obtain the fractional part with some arithmetics, but we can just use the standard C `modf` function that exists for that purpose and is available after including `<math.h>`. While we cannot use the entire C standard library on bare-metal without performing some extra work, mathematical functions do not require anything extra, so we can use them.
+
+Since our reference clock is 24 MHz, as we established before, the `refclock` variable is `24000000u`. Assuming that we want to set a baudrate of `9600`, first the `baudrate_divisor` will be calculated as `24000000 / (16 * 9600)`, giving `156.25`. The `modf` function will helpfully set `intpart` to `156` and `fractpart` to `0.25`. Following the manual's instructions, we directly write the `156` to `IBRD`, and convert `0.25` to a 6-bit number. `0.25 * 64 + 0.5` is `16.5`, we only take the integer part of that, so `16` goes into `FBRD`. Note that `16` makes sense as a representation of `0.25` if you consider that the largest 6-bit number is `63`.
+
+We continue now by setting up the rest of the configuration - data bits, parity and the stop bit.
+
+```
+    uint32_t lcrh = 0u;
+
+    /* Set data word size */
+    switch (config->data_bits)
+    {
+    case 5:
+        lcrh |= LCRH_WLEN_5BITS;
+        break;
+    case 6:
+        lcrh |= LCRH_WLEN_6BITS;
+        break;
+    case 7:
+        lcrh |= LCRH_WLEN_7BITS;
+        break;
+    case 8:
+        lcrh |= LCRH_WLEN_8BITS;
+        break;
+    }
+
+    /* Set parity. If enabled, use even parity */
+    if (config->parity) {
+        lcrh |= LCRH_PEN;
+        lcrh |= LCRH_EPS;
+        lcrh |= LCRH_SPS;
+    } else {
+        lcrh &= ~LCRH_PEN;
+        lcrh &= ~LCRH_EPS;
+        lcrh &= ~LCRH_SPS;
+    }
+
+    /* Set stop bits */
+    if (config->stop_bits == 1u) {
+        lcrh &= ~LCRH_STP2;
+    } else if (config->stop_bits == 2u) {
+        lcrh |= LCRH_STP2;
+    }
+
+    /* Enable FIFOs */
+    lcrh |= LCRH_FEN;
+
+    uart0->LCRH = lcrh;
+```
+
+That is a longer piece of code, but there's not much remarkable about it. For the most part it's just picking the correct bits to set or clear depending on the provided configuration. One thing to note is the use of the temporary `lcrh` variable where the value is built, before actually writing it to the `LCRH` register at the end. It is sometimes necessary to make sure an entire register is written at once, in which case this is the technique to use. In the case of this particular device, `LCRH` can be written bit-by-bit, but writing to it also triggers updates of `IBRD` and `FBRD`, so we might as well avoid doing that many times.
+
+At the end of the above snippet, we enable FIFOs for potentially better performance, and write the `LCRH` as discussed. After that, everything is configured, and all that remains is to actually turn the UART on:
+
+```
+    uart0->CR |= CR_UARTEN;
+```
+
+## Read and write functions
+
+We can start the UART with our preferred configuration now, so it's a good time to implement functions that actually perform useful work - that is, send and receive data.
+
+Code for sending is very straightforward:
+
+```
+void uart_putchar(char c) {
+    while (uart0->FR & FR_TXFF);
+    uart0->DR = c;
+}
+
+void uart_write(const char* data) {
+    while (*data) {
+        uart_putchar(*data++);
+    }
+}
+```
+
+Given any string, we just output it one character at a time. The `TXFF` bit in `FR` that `uart_putchar()` waits for indicates a full transmit queue - we just wait until that's no longer the case.
+
+These two functions have `void` return type, they don't return `uart_error`. Why? It's again a design decision, meaning you could argue against it, but the write functions don't have any meaningful way of detecting errors anyway. Data is sent out on the bus and that's it. The UART doesn't know if anybody's receiving it, and it doesn't have any error flags that are useful when transmitting. So the `void` return type here is intended to suggest that the function isn't capable of providing any useful information regarding its own status.
+
+The data reception code is a bit more interesting because it actually has error checks:
+
+```
+uart_error uart_getchar(char* c) {
+    if (uart0->FR & FR_RXFE) {
+        return UART_NO_DATA;
+    }
+
+    *c = uart0->DR & DR_DATA_MASK;
+    if (uart0->RSRECR & RSRECR_ERR_MASK) {
+        /* The character had an error */
+        uart0->RSRECR &= RSRECR_ERR_MASK;
+        return UART_RECEIVE_ERROR;
+    }
+    return UART_OK;
+}
+```
+
+First it checks if the receive FIFO is empty, using the `RXFE` bit in `FR`. Returning `UART_NO_DATA` in that case tells the user of this code not to expect any character. Otherwise, if data is present, the function first reads it from the data register `DR`, and then checks the corresponding error status - it has to be done in this order, once again according to the all-knowing manual. The PL011 UART can distinguish between several kinds of errors (framing, parity, break, overrun) but here we treat them all the same, using `RSRECR_ERR_MASK` as a bitmask to check if any error is present. In that case, a write to the `RSRECR` register is performed to reset the error flags.
+
+## Putting it to use
+
+We need some code to make use of our new driver! One possibility is to rewrite `cstart.c` like the following:
+
+```
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include "uart_pl011.h"
+
+char buf[64];
+uint8_t buf_idx = 0u;
+
+static void parse_cmd(void) {
+    if (!strncmp("help\r", buf, strlen("help\r"))) {
+        uart_write("Just type and see what happens!\n");
+    } else if (!strncmp("uname\r", buf, strlen("uname\r"))) {
+        uart_write("Just type and see what happens!\n");
+    }
+}
+
+int main() {
+	uart_config config = {
+		.data_bits = 8,
+		.stop_bits = 1,
+		.parity = false,
+		.baudrate = 9600
+	};
+	uart_configure(&config);
+	uart_putchar('A');
+	uart_putchar('B');
+	uart_putchar('C');
+	uart_putchar('\n');
+	uart_write("I love drivers!\n");
+	uart_write("Type below...\n");
+	while (1) {
+        char c;
+        if (uart_getchar(&c) == UART_OK) {
+            uart_putchar(c);
+            buf[buf_idx % 64] = c;
+            buf_idx++;
+            if (c == '\r') {
+                uart_write("\n");
+                buf_idx = 0u;
+                parse_cmd();
+            }
+        }
+    }
+
+	return 0;
+}
+```
+
+The `main` function asks the UART driver to configure it for `9600/8-N-1`, a commonly used mode, and then outputs some text to the screen much as the previous chapter's example did. Some more interesting things happen within the `while` loop now though - it constantly polls the UART for incoming data and appends any characters read to a buffer, and prints that same character back to the screen. Then, when a carriage return (`\r`) is read, it calls `parse_cmd()`.That's a very basic method of waiting for something to be input and reacting on the Enter key.
+
+`parse_cmd()` is a simple function that has responses in case the input line was `help` or `uname`. This way, without writing anything fancy, we grant our bare-metal program the ability to respond to user input!
