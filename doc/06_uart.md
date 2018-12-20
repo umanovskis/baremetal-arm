@@ -425,3 +425,9 @@ There's no real way around those issues short of running on real hardware, the b
 We've written our first driver that interfaces with the hardware directly, and we wrote some proof-of-concept code making use of the driver. A big takeaway is that carefully reading the manual is at least half the work involved in writing a driver. In writing the actual driver code, we also saw how it can be quite different from most non-driver code. There's a lot of bit manipulation, and operations that are order-sensitive in ways that may not be intuitive. The fact that the same location in memory, like the `DR` SFR, acts differently when being read versus written is also something rarely encountered outside of driver code.
 
 Unsurprisingly, the driver written in this chapter is not perfect. Some possibilities for improvement:
+
+* Interrupt handling. Currently the driver is being used in polling mode, constantly asking it if new characters have been received. In most practical cases, polling is too inefficient and interrupts are desired.
+
+* More robustness. Error handling, sanity checks and other measures preventing the driver from being incorrectly are good! The driver could return different error codes for different types of receive errors instead of lumping them all together. The driver could keep track of its own status and prevent functions like `uart_write` from executing before the configuration has been done with `uart_configure`.
+
+* The reference clock is hardcoded as 24 MHz now, the driver should instead query the hardware to find the reference clock's frequency.
