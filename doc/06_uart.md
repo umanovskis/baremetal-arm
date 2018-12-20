@@ -2,7 +2,7 @@
 
 This chapter will concern driver development, a crucial part of bare-metal programming. We will walk through writing a UART driver for the Versatile Express series, but the ambition here is not so much to cover that particular UART in detail as it is to show the general approach and patterns when writing a similar driver. As always with programming, there is a lot that can be debated, and there are parts that can be done differently. Starting with a UART driver specifically has its advantages. UARTs are very common peripherals, they're much simpler than other serial buses such as SPI or I2C, and the UART pretty much corresponds to standard input/output when run in QEMU.
 
-# Doing the homework
+## Doing the homework
 
 Writing a peripheral driver is not something you should just jump into. You need to understand the device itself, and how it integrates with the rest of the hardware. If you start coding off the hip, you're likely to end up with major design issues, or just a driver that mysteriously fails to work because you missed a small but crucial detail. Thinking before doing should apply to most programming, but driver programming is particularly unforgiving if you fail to follow that rule.
 
@@ -16,7 +16,7 @@ Before writing a peripheral device driver, we need to understand, in broad strok
 
 Let's then look at the UART of the Versatile Express and learn enough about it to be ready to create the driver.
 
-## Basic UART operation
+### Basic UART operation
 
 UART is a fairly simple communications bus. Data is sent out on one wire, and received on another. Two UARTs can thus communicate directly, and there is no clock signal or synchronization of any kind, it's instead expected that both UARTs are configured to use the same baud rate. UART data is transmitted in packets, which always begin with a start bit, followed by 5 to 9 data bits, then optionally a parity bit, then 1 or 2 stop bits. A packet could look like this:
 
@@ -32,7 +32,7 @@ A pair of UARTs needs to use the same frame formatting for successful communicat
 
 On to the specific UART device that we have. The Versatile Express hardware series comes with the PrimeCell UART PL011, the [reference manual](http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0183g/index.html) is also available from the ARM website. Reading through the manual, we can see that the PL011 is a typical UART with programmable baud rate and packet format settings, that it supports infrared transmission, and FIFO buffers both for transmission and reception. Additionally there's Direct Memory Access (DMA) support, and support for hardware flow control. In the context of UART, hardware flow control means making use of two additional physical signals so that one UART can inform another when it's ready to send, or ready to receive, data.
 
-## Key PL011 registers
+### Key PL011 registers
 
 The PL011 UART manual also describes the registers that control the peripheral, and we can identify the most important registers that our driver will need to access in order to make the UART work. We will need to work with:
 
@@ -52,7 +52,7 @@ In addition, there are registers related to interrupts, but we will begin by usi
 
 As is often the case, reading register descriptions in the manual also reveals some special considerations that apply to the particular hardware. For example, it turns out that writing the IBRD or FBRD registers will not actually have any effect until writing the LCR_H - so even if you only want to update IBRD, you need to perform a sequence of two writes, one to IBRD and another to LCR_H. It is very common in embedded programming to run into such special rules for reading or writing registers, which is one of the reasons reading the manual for the device you're about to program is so important.
 
-## PL011 - Versatile Express integration
+### PL011 - Versatile Express integration
 
 Now that we are somewhat familiar with the PL011 UART peripheral itself, it's time to look at how integrates with the Versatile Express hardware. The VE hardware itself consists of a motherboard and daughter board, and the UARTs are on the motherboard, which is called the Motherboard Express µATX and of course has [its own reference manual](http://infocenter.arm.com/help/topic/com.arm.doc.dui0447j/DUI0447J_v2m_p1_trm.pdf).
 
@@ -62,9 +62,9 @@ Next we need to find where the UART SFRs are located from the CPU's perspective.
 
 Yes, this means that we have to check two different manuals just to find the peripheral's address. This is, once again, nothing unusual in an embedded context.
 
-# Writing the driver
+## Writing the driver
 
-## What's in the box?
+### What's in the box?
 
 In higher-level programming, you can usually treat drivers as a black box, if you even give them any consideration. They're there, they do things with hardware, and they only have a few functions you're exposed to. Now that we're writing a driver, we have to consider what it consists of, the things we need to implement. Broadly, we can say that a driver has:
 
@@ -80,7 +80,7 @@ In higher-level programming, you can usually treat drivers as a black box, if yo
 
 Now we have a rough outline of what we need to implement. We will need code to start and configure the UART, and to send and receive data. Let's get on with the implementation.
 
-## Exposing the SFRs
+### Exposing the SFRs
 
 We know by now that programming the UART will be done by accessing the SFRs. It is possible, of course, to access the memory locations directly, but a better way is to define a C struct that reflects what the SFRs look like. We again refer to the PL011 manual for the register summary. It begins like this:
 
@@ -131,7 +131,7 @@ static uart_registers* uart0 = (uart_registers*)0x10009000u;
 
 A possible alternative to the above would be to declare a macro that would point to the SFRs, such as `#define UART0 ((uart_registers*)0x10009000u)`. That choice is largely a matter of preference.
 
-## Initializing and configuring the UART
+### Initializing and configuring the UART
 
 Let's now write `uart_configure()`, which will initialize and configure the UART. For some drivers you might want a separate `init` function, but a `uart_init()` here wouldn't make much sense, the device is quite simple. The functionitself is not particularly complex either, but can showcase some patterns.
 
@@ -294,7 +294,7 @@ At the end of the above snippet, we enable FIFOs for potentially better performa
     uart0->CR |= CR_UARTEN;
 ```
 
-## Read and write functions
+### Read and write functions
 
 We can start the UART with our preferred configuration now, so it's a good time to implement functions that actually perform useful work - that is, send and receive data.
 
@@ -337,7 +337,7 @@ uart_error uart_getchar(char* c) {
 
 First it checks if the receive FIFO is empty, using the `RXFE` bit in `FR`. Returning `UART_NO_DATA` in that case tells the user of this code not to expect any character. Otherwise, if data is present, the function first reads it from the data register `DR`, and then checks the corresponding error status - it has to be done in this order, once again according to the all-knowing manual. The PL011 UART can distinguish between several kinds of errors (framing, parity, break, overrun) but here we treat them all the same, using `RSRECR_ERR_MASK` as a bitmask to check if any error is present. In that case, a write to the `RSRECR` register is performed to reset the error flags.
 
-## Putting it to use
+### Putting it to use
 
 We need some code to make use of our new driver! One possibility is to rewrite `cstart.c` like the following:
 
@@ -396,3 +396,32 @@ int main() {
 The `main` function asks the UART driver to configure it for `9600/8-N-1`, a commonly used mode, and then outputs some text to the screen much as the previous chapter's example did. Some more interesting things happen within the `while` loop now though - it constantly polls the UART for incoming data and appends any characters read to a buffer, and prints that same character back to the screen. Then, when a carriage return (`\r`) is read, it calls `parse_cmd()`.That's a very basic method of waiting for something to be input and reacting on the Enter key.
 
 `parse_cmd()` is a simple function that has responses in case the input line was `help` or `uname`. This way, without writing anything fancy, we grant our bare-metal program the ability to respond to user input!
+
+### Doing a test run
+
+To build our program with the new driver, it needs to be added to the source file list in CMake, and we need to change a couple of flags as well. To add the driver file, just add the file to the appropriate list in `CMakeLists.txt`:
+
+```
+set(SRCLIST src/cstart.c src/uart_pl011.c)
+```
+
+We are using the C standard library now, and we need to link against `libm`, so the compiler and linker flags should now look like this:
+
+```
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostartfiles -g -Wall")
+set(CMAKE_EXE_LINKER_FLAGS "-T ${LINKSCRIPT} -lgcc -lm")
+```
+
+When building C programs with GCC, the `-lm` flag is necessary if the program uses mathematical functions declared in the standard header `math.h`. For the rest of the standard library, no separate flag is needed. This special treatment of `libm` stems from technical decisions made a long time ago, and is by now best treated simply as a bit of legacy to remember.
+
+Rebuild everything (since we changed `CMakeLists.txt` that means you also need to invoke `cmake`), run the program in QEMU and, after some output, you should be able to type into the terminal and see what you type. That's the UART driver at work! Each character you type gets returned by `uart_getchar` and then output to the screen by `uart_putchar`. Try writing `help` and hitting the Enter key - you should see the output as defined in `parse_cmd`.
+
+Unfortunately, this is also the first point where using QEMU is a disadvantage. QEMU emulation of devices has limitations, and the PL011 UART is no exception. Our driver will work in QEMU no matter the baudrate. No matter if we connect the UART to standard input/output (as now) or a Linux character device, the baudrate will not matter. There's also no enable/disable mechanism for the emulated UART - the driver would work even if we never enabled the device in the `CR` register.
+
+There's no real way around those issues short of running on real hardware, the best we can do is try and write the driver as if for the actual hardware device.
+
+## Summary
+
+We've written our first driver that interfaces with the hardware directly, and we wrote some proof-of-concept code making use of the driver. A big takeaway is that carefully reading the manual is at least half the work involved in writing a driver. In writing the actual driver code, we also saw how it can be quite different from most non-driver code. There's a lot of bit manipulation, and operations that are order-sensitive in ways that may not be intuitive. The fact that the same location in memory, like the `DR` SFR, acts differently when being read versus written is also something rarely encountered outside of driver code.
+
+Unsurprisingly, the driver written in this chapter is not perfect. Some possibilities for improvement:
