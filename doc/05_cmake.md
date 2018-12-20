@@ -1,4 +1,4 @@
-# Creating a build system
+# Build & debug system
 
 This part is going to be a detour from bare-metal programming in order to quickly set up a build system using CMake, and briefly show how our program can be debugged while running in QEMU. If you're not interested, you can skip this part, though at least skimming it would be recommended.
 
