@@ -5,7 +5,7 @@ install:
     - sudo modprobe nbd
     
 before_script:
-    - cd baremetal-arm
+    - cd "$TRAVIS_REPO_SLUG"
 
 script:
     - bash -ex src/buildall.sh
