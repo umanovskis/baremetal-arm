@@ -1,0 +1,8 @@
+language: c
+
+install:
+    - sudo apt-get install -y flex bison cmake build-essential qemu-system-arm gcc-arm-none-eabi qemu-utils
+    - sudo modprobe nbd
+    
+script:
+    - bash -ex src/buildall.sh
