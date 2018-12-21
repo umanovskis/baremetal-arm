@@ -9,7 +9,7 @@ install:
     - sudo modprobe nbd
     
 before_script:
-    - if [ ! -d "$HOME/gcc-arm-none-eabi-8-2018-q4-major/bin" ]; then wget https://developer.arm.com/-/media/Files/downloads/gnu-rm/8-2018q4/gcc-arm-none-eabi-8-2018-q4-major-linux.tar.bz2?revision=d830f9dd-cd4f-406d-8672-cca9210dd220; tar -xjvf gcc-arm-none* ; fi
+    - if [ ! -d "$HOME/gcc-arm-none-eabi-8-2018-q4-major/bin" ]; then wget https://developer.arm.com/-/media/Files/downloads/gnu-rm/8-2018q4/gcc-arm-none-eabi-8-2018-q4-major-linux.tar.bz2?revision=d830f9dd-cd4f-406d-8672-cca9210dd220 -O $HOME/armgcc.tar.bz2; tar -xjvf $HOME/armgcc.tar.bz2 -C $HOME ; fi
     - export PATH=$PATH:$HOME/gcc-arm-none-eabi-8-2018-q4-major/bin
 
 script:
