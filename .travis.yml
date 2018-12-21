@@ -4,8 +4,5 @@ install:
     - sudo apt-get install -y flex bison cmake build-essential qemu-system-arm gcc-arm-none-eabi qemu-utils
     - sudo modprobe nbd
     
-before_script:
-    - cd "$TRAVIS_REPO_SLUG"
-
 script:
     - bash -ex src/buildall.sh
