@@ -4,7 +4,9 @@ This repository contains a tutorial ebook concerning programming a bare-metal AR
 
 ## Table of Contents
 
-* [Chapter 0](doc/00_intro.md): Introduction. A brief intro to the subject and the ebook.
+This is still a work in progress. Currently available:
+
+* [Chapter 0](doc/00_introduction.md): Introduction. A brief intro to the subject and the ebook.
 * [Chapter 1](doc/01_setup.md): Setup. A short chapter dealing with preparing a Linux environment for further development.
 * [Chapter 2](doc/02_first_boot.md): The first boot. Basic use of QEMU and the cross-compiler toolchain, getting the simplest possible code to run.
 * [Chapter 3](doc/03_bootloader.md): Adding a bootloader. Building the highly popular U-Boot bootloader, and getting it to boot our own code.
