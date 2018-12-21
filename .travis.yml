@@ -1,9 +1,16 @@
 language: c
 dist: xenial
 
+cache:
+    directories:
+        - $HOME/gcc-arm-none-eabi-8-2018-q4-major
 install:
-    - sudo apt-get install -y flex bison cmake build-essential qemu-system-arm gcc-arm-none-eabi qemu-utils
+    - sudo apt-get install -y flex bison cmake build-essential qemu-system-arm qemu-utils
     - sudo modprobe nbd
     
+before_script:
+    - if [ ! -d "$HOME/gcc-arm-none-eabi-8-2018-q4-major/bin" ]; then wget https://developer.arm.com/-/media/Files/downloads/gnu-rm/8-2018q4/gcc-arm-none-eabi-8-2018-q4-major-linux.tar.bz2?revision=d830f9dd-cd4f-406d-8672-cca9210dd220; tar -xjvf gcc-arm-none* ; fi
+    - export PATH=$PATH:$HOME/gcc-arm-none-eabi-8-2018-q4-major/bin
+
 script:
     - bash -ex src/buildall.sh
