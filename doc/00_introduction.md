@@ -32,3 +32,15 @@ void do_amazing_things(void) {
 If you are reading the PDF version, note that longer lines of code have to get wrapped to fit within the page, but the indentation and line numbers inside each code block should help keep things clear.
 
 Due to some unfortunate historical legacy, there are two different definitions for data sizes in common use. There's the binary definition, where a kilobyte is 1024 bytes, and the metric definition, where a kilobyte is 1000 bytes. Throughout this ebook, all references to data quantities are in the binary sense.
+
+## Source code
+
+For each chapter, the corresponding source code is available. If you're reading this on GitHub, you can explore the repository and check its readme file for more information. If you're reading the PDF version or other standalone copy, you can head to the [GitHub repository](https://github.com/umanovskis/baremetal-arm/) to access the source code, and perhaps updates to this ebook. The repository URL is `https://github.com/umanovskis/baremetal-arm/`.
+
+## Licensing
+
+The ebook is licensed under Creative Commons Attribution-Share Alike (CC-BY-SA) [license](http://creativecommons.org/licenses/by-nc-sa/4.0/) - see the Git repository for more details on licensing.
+
+## Credits and acknowledgments
+
+The PDF version of this ebook is typeset using the [Eisvogel LaTeX template](https://github.com/umanovskis/pandoc-latex-template) by Pascal Wagler.

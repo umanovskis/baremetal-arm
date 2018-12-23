@@ -8,7 +8,7 @@ Let us run QEMU for the very first time, with the following command:
 qemu-system-arm -M vexpress-a9 -m 32M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait
 ```
 
-It should take some time as the QEMU machine spins up, after which it should crash with an error message. The crash is to be expected - we did not provide any executable to run so of course our emulated system cannot accomplish anything. For documenation of the QEMU command line, you can check `man qemu-doc` and online, but let's go through the command we used and break it down into parts. 
+It should take some time as the QEMU machine spins up, after which it should crash with an error message. The crash is to be expected - we did not provide any executable to run so of course our emulated system cannot accomplish anything. For documenation of the QEMU command line, you can check `man qemu-doc` and online, but let's go through the command we used and break it down into parts.
 
 * `-M vexpress-a9`. The `-M` switch selects the specific machine to be emulated. The [ARM Versatile Express](http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.subset.boards.express/index.html) is an ARM platform intended for prototyping and testing. Hardware boards with the Versatile Express platform exist, and the platform is also a common choice for testing with emulation. The `vexpress-a9` variant has the Cortex A9 CPU, which powers a wide variety of embedded devices that perform computationally-intensive tasks.
 
@@ -41,6 +41,14 @@ Line by line:
 2. We enter an infinite loop. The period `.` is short-hand for *current address*, so `b .` means "branch to the current instruction address", which is an infinite loop.
 
 3. We allocate a word (4 bytes) with the value `0xDEADBEEF`, and give it the label `str1`. The value `0xDEADBEEF` is a distinctive value that we should easily notice. Writing such values is a common trick in low-level debugging, and `0xDEADBEEF` is often used to indicate free memory or a general software crash. Why will this work if we're in an infinite loop? Because this is not executable code, it's just an instruction to the assembler to allocate the 4-byte word here.
+
+---
+
+`sort -R ~/facts-and-trivia | head -n1 `
+
+Memorable hexadecimal values like `0xDEADBEEF` have a long tradition, with different vendors and systems having their own constants. Wikipedia has a [separate article](https://en.wikipedia.org/wiki/Magic_number_(programming)) on these magic values.
+
+---
 
 ## Assembling it
 

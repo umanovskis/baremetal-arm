@@ -1,12 +1,12 @@
 # Environment setup
 
-In this article, I'll cover the basic environment setup to get started with ARM bare-metal programming using an emulator. Some familiarity with using Linux is assumed. You don't need to be a Linux expert, but you should be able to use the command line and do some basic troubleshooting if the system doesn't behave as expected.
+In this chapter, I'll cover the basic environment setup to get started with ARM bare-metal programming using an emulator. Some familiarity with using Linux is assumed. You don't need to be a Linux expert, but you should be able to use the command line and do some basic troubleshooting if the system doesn't behave as expected.
 
 ## Linux
 
 The first prerequisite is getting a Linux system up and running. Hopefully you are already familiar with Linux and have some kind of Linux running. Otherwise you should install Linux, or set up a virtual machine running Linux.
 
-If you are running Windows and want to run a virtual Linux, [VirtualBox](http://www.virtualbox.org) is recommended. As for Linux distributions, any modern distribution should be fine, although in some cases you might need to install software manually. I use Linux Mint Debian Edition, and double-check most of the work in a virtual machine running Ubuntu, which is the most popular Linux distribution for beginners. 
+If you are running Windows and want to run a virtual Linux, [VirtualBox](http://www.virtualbox.org) is recommended. As for Linux distributions, any modern distribution should be fine, although in some cases you might need to install software manually. I use Linux Mint Debian Edition, and double-check most of the work in a virtual machine running Ubuntu, which is the most popular Linux distribution for beginners.
 
 ## QEMU
 
@@ -38,7 +38,7 @@ The toolchain we need is `gcc-arm-none-eabi`. We will need a version with GCC 6 
 sudo apt-get install gcc-arm-none-eabi
 ```
 
-If you're using a distribution that offers an old version of the package, you can download the toolchain [from ARM directly](https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads). In that case, it's recommended that you add the toolchain's folder to your environment's `PATH` after extracting it somewhere.
+You can run `arm-none-eabi-gcc --version` to check the version number. If you're using a distribution that offers an old version of the package, you can download the toolchain [from ARM directly](https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads). In that case, it's recommended that you add the toolchain's folder to your environment's `PATH` after extracting it somewhere.
 
 ## Build system essentials
 
@@ -54,4 +54,12 @@ On some Linux variants, you might also need to install `bison` and `flex` if the
 sudo apt-get install bison flex
 ```
 
-With this, your system should now have everything that is necessary to compile programs for ARM and run them in an emulated machine. In the next article, we'll continue our introduction by booting the emulated machine and giving the just-installed tools a spin.
+---
+
+`sort -R ~/facts-and-trivia | head -n1 `
+
+The `flex` program is an implementation of `lex`, a standard lexical analyzer first developed in the mid-1970s by Mike Lesk and Eric Schmidt, who served as the chairman of Google for some years.
+
+---
+
+With this, your system should now have everything that is necessary to compile programs for ARM and run them in an emulated machine. In the next chapter, we'll continue our introduction by booting the emulated machine and giving some of the just-installed tools a spin.
