@@ -4,6 +4,8 @@ This repository contains a tutorial ebook concerning programming a bare-metal AR
 
 ## Table of Contents
 
+An up-to-date PDF version is [also available](http://umanovskis.se/files/arm-baremetal-ebook.pdf).
+
 This is still a work in progress. Currently available:
 
 * [Chapter 0](doc/00_introduction.md): Introduction. A brief intro to the subject and the ebook.
@@ -13,7 +15,7 @@ This is still a work in progress. Currently available:
 * [Chapter 4](doc/04_cenv.md): Preparing a C environment. This chapter deals with the necessary work for getting from startup in assembly code to C code.
 * [Chapter 5](doc/05_cmake.md): Build & debug system. Here we show how the work can be streamlined by adding a CMake-based build system, and how the bare-metal program can be debugged.
 * [Chapter 6](doc/06_uart.md): UART driver development. In this chapter, a device driver for a UART gets written.
-* Chapter 7.
+* Chapter 7. Currently WIP.
 
 ## Repository structure
 
