@@ -26,4 +26,18 @@ typedef struct {
        Don't care about them */
 } gic_distributor_registers;
 
+typedef struct {
+    uint32_t CCTLR;                 /* 0x0 CPU Interface control register */
+    uint32_t CCPMR;                 /* 0x4 Interrupt priority mask register */
+    uint32_t CBPR;                  /* 0x8 Binary point register */
+    const uint32_t CIAR;            /* 0xC Interrupt acknowledge register */
+    uint32_t CEOIR;                 /* 0x10 End of interrupt register */
+    const uint32_t CRPR;            /* 0x14 Running priority register */
+    const uint32_t CHPPIR;          /* 0x18 Higher priority pending interrupt register */
+    uint32_t CABPR;                 /* 0x1C Aliased binary point register */
+    const uint32_t CAIAR;           /* 0x20 Aliased interrupt acknowledge register */
+    uint32_t CAEOIR;                /* 0x24 Aliased end of interrupt register */
+    const uint32_t CAHPPIR;         /* 0x28 Aliased highest priority pending interrupt register */
+} gic_cpu_interface_registers;
+
 #endif
