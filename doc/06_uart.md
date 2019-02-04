@@ -131,6 +131,42 @@ static uart_registers* uart0 = (uart_registers*)0x10009000u;
 
 A possible alternative to the above would be to declare a macro that would point to the SFRs, such as `#define UART0 ((uart_registers*)0x10009000u)`. That choice is largely a matter of preference.
 
+### Register access width
+
+An important, but easy to overlook, aspect of writing to SFRs is access width. A device might require its SFRs to be written all at once, with one write instruction, or the device might introduce other constraints. The corresponding device manual should indicate how it expects the registers to be accessed. Commonly encountered types of access are:
+
+* Word access. The access operation should have the same width as the machine word, e.g. 32 bits on a 32-bit system. A SFR is usually the size of one word.
+
+* Half-word access. As the name indicates, this means accessing half of a word at a time, so 16 bits on a 32-bit system.
+
+* Byte access. Any byte within the register can be written individually.
+
+Requiring word access, possibly with allowing half-word access, is common. Allowing byte access to SFRs is somewhat less common.
+
+What does this mean in practice, and how to make sure access is of the right width? You have to be aware of how your code is going to access SFRs, consider the following:
+
+```
+sfr->SOMEFIELD |= 0xFu;
+```
+
+Most likely, the line would result in assembly code that performs a whole-word write, such as, if the address of `SOMEFIELD` is in register `R0`
+
+```
+ldr r1, [r0] ; load value in SOMEFIELD into R1
+orr r2, r1, #15 ; save SOMEFIELD | 0xF into R2
+str r2, [r0] ; write back to SOMEFIELD
+```
+
+or other optimized code that would be even better. However, it's possible that the line would be compiled into code that performs multiple accesses, i.e. one for each byte of SOMEFIELD.
+
+A single word-wide write can be ensured by explicitly asking for a write to a `uint32_t*` such as:
+
+```
+*(uint32_t*)sfr->SOMEFIELD = some_val;
+```
+
+This is not particularly important for the PL011 UART specifically, which does not specify any restrictions on register access, but using word access explicitly would be good practice nonetheless. In the next chapter, dealing with the interrupt controller, register access width becomes more important.
+
 ### Initializing and configuring the UART
 
 Let's now write `uart_configure()`, which will initialize and configure the UART. For some drivers you might want a separate `init` function, but a `uart_init()` here wouldn't make much sense, the device is quite simple. The functionitself is not particularly complex either, but can showcase some patterns.
