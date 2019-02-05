@@ -15,9 +15,9 @@ set(CMAKE_OBJCOPY "arm-none-eabi-objcopy")
 
 file(GLOB LINKSCRIPT "src/linkscript.ld")
 set(ASMFILES src/startup.s)
-set(SRCLIST src/cstart.c src/uart_pl011.c)
+set(SRCLIST src/cstart.c src/uart_pl011.c src/gic.c)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostartfiles -g -Og -Wall")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostartfiles -mthumb -mcpu=cortex-a9 -g -Og -Wall -DCPU_A9")
 set(CMAKE_EXE_LINKER_FLAGS "-T ${LINKSCRIPT} -lgcc -lm")
 
 add_custom_target(u-boot 
