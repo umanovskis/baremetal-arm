@@ -45,6 +45,9 @@ irq_loop:
     ldr r1, =_stack_start
     ldr sp, =_stack_end
 
+    /* Disable supervisor mode interrupts */
+    cpsid if
+
 stack_loop:
     cmp r1, sp
     strlt r0, [r1], #4
@@ -71,7 +74,6 @@ bss_loop:
     strlt r0, [r1], #4
     blt bss_loop
 
-    cpsie i
     bl main
     b Abort_Exception
 

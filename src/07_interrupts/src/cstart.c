@@ -2,7 +2,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include "uart_pl011.h"
-#include "cpu_a9.h"
+#include "cpu.h"
+#include "gic.h"
 
 char buf[64];
 uint8_t buf_idx = 0u;
@@ -31,13 +32,13 @@ int main() {
 
         uart_write("I love drivers!\n");
         uart_write("Type below...\n");
-	uint32_t p = cpu_get_periphbase();
-	uart_putchar(p & 0xFF);
-	uart_putchar(p & 0xFF000000);
+	gic_init();
+	gic_enable_interrupt(37);
+	//cpu_enable_interrupts();
 
         while (1) {
             char c;
-            if (0 && uart_getchar(&c) == UART_OK) {
+            if (uart_getchar(&c) == UART_OK) {
                 uart_putchar(c);
                 buf[buf_idx % 64] = c;
                 buf_idx++;

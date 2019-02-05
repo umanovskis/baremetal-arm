@@ -2,8 +2,9 @@
 #define GIC_H
 
 #include <stdint.h>
+#include "cpu.h"
 
-typedef struct {
+typedef volatile struct __attribute__((packed)) {
     uint32_t DCTLR;                 /* 0x0 Distributor Control register */
     const uint32_t DTYPER;          /* 0x4 Controller type register */
     const uint32_t DIIDR;           /* 0x8 Implementer identification register */
@@ -12,7 +13,6 @@ typedef struct {
     uint32_t DISENABLER[32];        /* 0x100 - 0x17C Interrupt set-enable registers */
     uint32_t DICENABLER[32];        /* 0x180 - 0x1FC Interrupt clear-enable registers */
     uint32_t DISPENDR[32];          /* 0x200 - 0x27C Interrupt set-pending registers */
-    uint32_t DICPENDR[32];          /* 0x280 - 0x2FC Interrupt clear-pending registers */
     uint32_t DICPENDR[32];          /* 0x280 - 0x2FC Interrupt clear-pending registers */
     uint32_t DICDABR[32];           /* 0x300 - 0x3FC Active Bit Registers (GIC v1) */
     uint32_t _reserved1[32];        /* 0x380 - 0x3FC reserved on GIC v1 */
@@ -26,7 +26,7 @@ typedef struct {
        Don't care about them */
 } gic_distributor_registers;
 
-typedef struct {
+typedef volatile struct __attribute__((packed)) {
     uint32_t CCTLR;                 /* 0x0 CPU Interface control register */
     uint32_t CCPMR;                 /* 0x4 Interrupt priority mask register */
     uint32_t CBPR;                  /* 0x8 Binary point register */
@@ -39,5 +39,17 @@ typedef struct {
     uint32_t CAEOIR;                /* 0x24 Aliased end of interrupt register */
     const uint32_t CAHPPIR;         /* 0x28 Aliased highest priority pending interrupt register */
 } gic_cpu_interface_registers;
+
+void gic_init(void);
+void gic_enable_interrupt(uint16_t number);
+void gic_trigger_interrupt(uint16_t number);
+
+#define GIC_DIST_BASE   ((cpu_get_periphbase() + GIC_DISTRIBUTOR_OFFSET))
+#define GIC_IFACE_BASE  ((cpu_get_periphbase() + GIC_IFACE_OFFSET))
+
+#define DCTRL_ENABLE    (1u)
+#define CCTRL_ENABLE    (1u)
+
+#define CIAR_ID_MASK	(0x3FFu)
 
 #endif
