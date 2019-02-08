@@ -15,7 +15,7 @@ This is still a work in progress. Currently available:
 * [Chapter 4](doc/04_cenv.md): Preparing a C environment. This chapter deals with the necessary work for getting from startup in assembly code to C code.
 * [Chapter 5](doc/05_cmake.md): Build & debug system. Here we show how the work can be streamlined by adding a CMake-based build system, and how the bare-metal program can be debugged.
 * [Chapter 6](doc/06_uart.md): UART driver development. In this chapter, a device driver for a UART gets written.
-* Chapter 7. Currently WIP.
+* [Chapter 7](doc/07_interrupts.md): Interrupts. The chapter goes through setting up the ARM Generic Interrupt Controller, using it to receive and respond to interrupts. Also the UART driver gets adapted to use interrupts. The chapter is currently WIP.
 
 ## Repository structure
 

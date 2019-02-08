@@ -1,5 +1,5 @@
 ---
-title: Bare-metal programming in C for ARM
+title: Bare-metal programming for ARM
 subtitle: A hands-on guide
 author: Daniels Umanovskis
 titlepage: true
