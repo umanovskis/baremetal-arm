@@ -309,6 +309,111 @@ Indeed, accessing the coprocessors is only possible with ARM instructions. The `
 
 You should see that the program works just like it did at the end of the previous chapter. Indeed, we've enabled the GIC, and have interrupts enabled globally for the CPU, but we haven't enabled any specific interrupts yet, so the GIC will never forward any interrupts that may get triggered.
 
+---
+
+**NOTE**
+
+With the GIC enabled, you can view its registers with a debugger or in the QEMU monitor, with some caveats. If you're using QEMU older than version 3.0, then the Distributor's control register will show the value `0` when read that way, even if the Distributor is actually enabled. And if you try to access the CPU Interface registers (starting at `0x1e000100`) with an external debugger like GDB, QEMU will crash, at least up to and including version 3.1.0
+
+---
+
 ## Handling an interrupt
 
 Let's now put the GIC to use and enable the UART interrupt, which should be triggered any time the UART receives data, which corresponds to us pressing a key in the terminal when running with QEMU. After receiving an interrupt, we'll need to properly handle it to continue program execution.
+
+Enabling the UART interrupt should be easy since we already wrote the `gic_enable_interrupt` function, all we need to do now is to call it with the correct interrupt number. That means once again going back to the manuals to find the interrupt ID numbe we need to use. Interrupt numbers usually differ depending on the board, and in our case the CoreTile Express A9x4 manual can be the first stop. The section *2.6 Interrupts* explains that the integrated test chip for the Cortex-A9 MPCore on this board is directly connected to the motherboard (where the UART is located as we remember from the previous chapter), and that motherboard interrupts 0-42 map to interrupts 32-74 on the daughterboard. This means we need to check the motherboard manual and add 32 to the interrupt number we find there.
+
+The Motherboard Express µATX manual explains in *2.6 Interrupt signals* that the motherboard has no interrupt controller, but connects interrupt signals to the daughterboard. The signal list says that `UART0INTR`, the interrupt signal for UART0, is number `5`. Since the daughterboard remaps interrupts, we'll need to enable interrupt `37` in order to receive UART interrupts in our program. The following snippet in `main` should do just fine:
+
+```
+gic_init();
+gic_enable_interrupt(37);
+cpu_enable_interrupts();
+```
+
+And we need an interrupt handler, which we need to point out in the vector table in `startup.s`. It should now look something like
+
+```
+_Reset:
+    b Reset_Handler
+    b Abort_Exception /* 0x4  Undefined Instruction */
+    b . /* 0x8  Software Interrupt */
+    b Abort_Exception  /* 0xC  Prefetch Abort */
+    b Abort_Exception /* 0x10 Data Abort */
+    b . /* 0x14 Reserved */
+    b IrqHandler /* 0x18 IRQ */
+    b . /* 0x1C FIQ */
+```
+
+The seventh entry in the vector table, at offset `0x18`, will now jump to `IrqHandler`. We can add it to the end of `startup.s`, and the simplest implementation that would tell us things are working fine can just store the data that the UART received in some register and hang.
+
+```
+IrqHandler:
+    ldr r0, =0x10009000
+    ldr r1, [r0]
+    b .
+```
+
+Reading from the UART register at `0x10009000` gives the data byte that was received, and we proceed to store it in `R1` before hanging. Why hang? Continuing execution isn't as simple as just returning from the IRQ handler, you have to take care to save the program state before the IRQ, then restore it, which we're not doing. Our handler, the way it's written above, breaks the program state completely.
+
+Let's compile and test now! Once the program has started in QEMU and written its greetings to the UART, press a key in the terminal to trigger the now-enabled UART interrupt. Then check the registers with `info registers` in QEMU monitors, and unfortunately you'll notice a problem. The IRQ handler doesn't seem to be running and the program is just hanging. Output could be something similar to:
+
+```
+(qemu) info registers
+R00=00000005 R01=00000000 R02=00000008 R03=00000090
+R04=00000000 R05=7ffd864c R06=60000000 R07=00000000
+R08=00000400 R09=7fef5ef8 R10=00000001 R11=00000001
+R12=00000000 R13=00000013 R14=7ff96264 R15=7ff96240
+PSR=00000192 ---- A S irq32
+```
+
+Good news first, the program status register `PSR` indicates that the CPU is running in IRQ mode (`0x192 & 0x1F` is `0x12`, which is IRQ mode, but QEMU helpfully points it out by writing `irq32` on the same line). The bad news is that `R0` and `R1` don't contain the values we would expect from `IrqHandler`, and the CPU seems to be currently running code at some strange address in `R15` (remember that `R15` is just another name for `PC`, the program counter register). The address doesn't correspond to anything we've loaded into memory so the conclusion is that the CPU did receive an interrupt, but failed to run `IrqHandler`.
+
+This is one more detail that happens due to QEMU emulation not being perfect. If you remember the discussion about memory and section layout from Chapter 4, we're pretending that our ROM starts at `0x60000000`. The Cortex-A9 CPU, however, expects the vector table to be located at address `0x0`, according to the architecture, and IRQ handling starts by executing the instruction at `0x18` from the vector table base. Unfortunately, our vector table is actually at `0x60000000` and address `0x0` is reserved by QEMU for the program flash memory, which we cannot emulate.
+
+We then need to make a QEMU-specific modification to our code and indicate that the vector table base is at `0x60000000`. This is a very low-level modification of the CPU configuration, so you might be able to guess that the system control coprocessor, CP15, is involved again. We previously used its `c15` register to read `PERIPHBASE`, and the ARMv7-A manual will reveal that the `c12` register contains the vector table base address, which may also be modified. To write to the coprocessor, we use the `mcr` instruction (as opposed to `mrc` for reading), and the instructions we need will be:
+
+```
+ldr r0, =0x60000000
+mcr p15, #0, r0, c12, c0, #0
+```
+
+Those two instructions should be somewhere early in the startup code, such as right after the `Reset_Handler` label. Having done that modification, we can perform another rebuild and test run. Press a key in the terminal, and check the registers in the QEMU monitor. Now you should see that `R0` contains the UART address, and `R1` contains the code code of the key you pressed, such as `0x66` for `f` or `0x61` for `a`.
+
+```
+R00=10009000 R01=00000066 R02=00000008 R03=00000090
+```
+
+With that, we have correctly jumped into an interrupt handler after an external interrupt triggers, which is a major step towards improving our bare-metal system.
+
+## Surviving the IRQ handler
+
+Our basic implementation of the IRQ handler isn't good for much, the biggest issue being that the program hangs completely and never leaves the IRQ mode.
+
+Interrupt handlers, as the name suggests, interrupt whatever the program was doing previously. This means that state needs to be saved before the handler, and restored after. The general-purpose ARM registers, for example, are shared between modes, so if your register `R0` contains something, and then an interrupt handler writes to it, the old value is lost. This is part of the reason why a separate IRQ stack is needed (which we prepare in the startup code), as the IRQ stack is normally where the context would be saved.
+
+When writing interrupt handlers in assembly, we have to take care of context saving and restoring, and correctly returning from the handler. Hand-written assembly interrupt handlers should be reserved for cases where fine-tuned assembly is critical, but generally it's much easier to write interrupt handlers in C, where they become regular functions for the most part. The compiler can handle context save and restore, and everything else that's needed for interrupt handling, if told that a particular function is an interrupt handler. In GCC, `__attribute__((interrupt))` is a decoration that can be used to indicate that a function is an interrupt handler.
+
+We can write a new function in the UART driver that would respond to the interrupt.
+
+```
+void __attribute__((interrupt)) uart_isr(void) {
+    uart_write("Interrupt!\n");
+}
+```
+
+Then just changing `b IrqHandler` to `b uart_isr` in the vector table will ensure that the `uart_isr` function is the one called when interrupts occur. If you test this, you'll see that the program just keeps spamming `Interrupt!` endlessly after a keypress. Our ISR needs to communicate with the GIC, acknowledge the interrupt and signal the GIC when the ISR is done. In the GIC, we need a function that acknowledges an interrupt.
+
+```
+uint32_t gic_acknowledge_interrupt(void) {
+    return gic_ifregs->CIAR & CIAR_ID_MASK;
+}
+```
+
+`CIAR_ID_MASK` is `0x3FF` because the lowest 9 bits of `CIAR` contain the interrupt ID of the interrupt that the GIC is signaling. After a read from `CIAR`, the interrupt is said to change from pending state to active. Another function is necessary to signal the end of the interrupt, which is done by writing the interrupt ID to the `EOIR` register.
+
+```
+uint32_t gic_end_interrupt(uint8_t number) {
+    WRITE32(gic_ifregs->EOIR, (number & EOIR_ID_MASK));
+}
+```

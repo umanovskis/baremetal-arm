@@ -35,7 +35,7 @@ uint32_t gic_acknowledge_interrupt(void) {
     return gic_ifregs->CIAR & CIAR_ID_MASK;
 }
 
-void gic_trigger_interrupt(uint16_t number) {
-    uint32_t* ptr = (uint32_t*)gic_dregs->DCTLR + 0xF00;
-    *ptr = (0xFF < 16) | number;
+uint32_t gic_end_interrupt(uint8_t number) {
+    WRITE32(gic_ifregs->EOIR, (number & EOIR_ID_MASK));
 }
+```

@@ -13,7 +13,7 @@ _Reset:
     b Abort_Exception  /* 0xC  Prefetch Abort */
     b Abort_Exception /* 0x10 Data Abort */
     b . /* 0x14 Reserved */
-    b IrqHandler /* 0x18 IRQ */
+    b uart_isr /* 0x18 IRQ */
     b . /* 0x1C FIQ */
 
 .section .text
@@ -84,6 +84,6 @@ Abort_Exception:
 
 .global IrqHandler
 IrqHandler:
-    movw r0, 0xABBA
-    movt r0, 0xABBA
+    ldr r0, =0x10009000
+    ldr r1, [r0]
     b .

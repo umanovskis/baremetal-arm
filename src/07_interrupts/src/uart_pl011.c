@@ -110,3 +110,6 @@ uart_error uart_getchar(char* c) {
     return UART_OK;
 }
 
+void __attribute__((interrupt)) uart_isr(void) {
+    uart_write("Interrupt!\n");
+}
