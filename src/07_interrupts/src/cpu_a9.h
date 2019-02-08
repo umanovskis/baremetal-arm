@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-#define WRITE32(_reg, _val) ((volatile uint32_t*)_reg = _val)
-
+#define WRITE32(_reg, _val) (*(volatile uint32_t*)&_reg = _val)
 
 #define GIC_IFACE_OFFSET        (0x100u)
 #define GIC_DISTRIBUTOR_OFFSET  (0x1000u)

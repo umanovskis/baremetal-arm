@@ -87,7 +87,7 @@ Let's clarify with a schematic drawing. The Distributor and the CPU interfaces a
               +------------------------+   +-----------+
 ```
 
-To enable interrupts, we'll need to program the GIC Distributor, telling it to enable certain interrupts, and forward them to our CPU. Once we have some form of working interrupt handling, we'll need to tell our program to report back to the GIC, using the CPU Interface part, when the handling of an interrupt has been finished. 
+To enable interrupts, we'll need to program the GIC Distributor, telling it to enable certain interrupts, and forward them to our CPU. Once we have some form of working interrupt handling, we'll need to tell our program to report back to the GIC, using the CPU Interface part, when the handling of an interrupt has been finished.
 
 The general sequence for an interrupt is as follows:
 
@@ -131,7 +131,7 @@ There are more Distributor registers but the ones above would let us get some in
 
 * CEOIR - end of interrupt register. The CPU is expected to write to this register after completing the handling of an interrupt.
 
-## First implementation
+## First GIC implementation
 
 Let us say that the first goal is to successfully react to an interrupt. For that, we will need a basic GIC driver and an interrupt handler, as well as some specific interrupt to enable and react to. The UART can act as an interrupt source, as a UART data reception (keypress in the terminal) triggers an interrupt. From there, we'll be able to iterate and improve the implementation with better interrupt hanlders and the use of vectorized interrupts.
 
@@ -249,3 +249,66 @@ So the coprocessor number comes first, `Rd` refers to the ARM register to read d
 ![CP15 c15 register summary](images/07_c15.png)
 
 Looking through the table, we can finally find out that reading the Configuration Base Register, which contains the `PERIPHBASE` value, requires accessing CP15 with `Rn=c15`, `op1 = 4`, `CRm = c0`, and `op2 = 0`. Putting it all together gives the `mrc` instruction that we use in `cpu_get_periphbase`.
+
+The remainder of `gic_init` is quite unremarkable. We enable forwarding of interrupts with all priorities to the current CPU, and enable the GIC Distributor so that interrupts from external sources could reach the CPU. Note the use of the `WRITE32` macro. Register access width was mentioned in the previous chapter, and unlike the PL011 UART, the GIC explicitly states that all registers permit 32-bit word access, with only a few Distributor registers allowing byte access. So we should take care to write the registers with one 32-bit write with this macro.
+
+```
+#define WRITE32(_reg, _val) (*(volatile uint32_t*)&_reg = _val)
+```
+
+The next order of business is to let specific interrupts be enabled. Initializing the GIC means we can now receive interrupts in general. As said before, upon receiving an interrupt, the GIC Distributor checks if the particular interrupt is enabled before forwarding it to the CPU interface. The Set-Enable registers, GICD_ISENABLER[n], control whether a particular interrupt is enabled. Each ISENABLER register can enable up to 32 interrupts, and having many such registers allows the hardware to have more than 32 different interrupt sources. Given an interrupt with id `N`, enabling it means setting the bit `N % 32` in register `N / 32`, where integer division is used. For example, interrupt 45 would be bit 13 (`45 % 32 = 13`) in ISENABLER[1] (`45 / 32 = 1`).
+
+For each interrupt, you also need to select which CPU interface(s) to forward the interrupt to, done in the GICD_ITARGETSR[n] registers. The calculation for these registers is slightly different, for interrupt with id `N` the register is `N / 4`, and the target list has to be written to byte `N % 4` in that register.  The target list is just a byte where bit 0 represents CPU interface 0, bit 1 represents CPU interface 1 and so on. We don't need anything fancy here, we just want to forward any enabled interrupts to CPU Interface 0.
+
+With that knowledge, writing the following function becomes quite simple:
+
+```
+void gic_enable_interrupt(uint16_t number) {
+    /* Enable the interrupt */
+    uint8_t reg = number / 32;
+    uint8_t bit = number % 32;
+
+    uint32_t reg_val = gic_dregs->DISENABLER[reg];
+    reg_val |= (1u << bit);
+    WRITE32(gic_dregs->DISENABLER[reg], reg_val);
+
+    /* Forward interrupt to CPU Interface 0 */
+    reg = number / 4;
+    bit = (number % 4) * 8; /* Can result in bit 0, 8, 16 or 24 */
+    reg_val = gic_dregs->DITARGETSR[reg];
+    reg_val |= (1u << bit);
+    WRITE32(gic_dregs->DITARGETSR[reg], reg_val);
+}
+```
+
+Now we have `gic_init` to initialize the GIC and `gic_enable_interrupt` to enable a specific interrupt. The preparation is almost done, we just need functions to globally disable and enable interrupts. When using an interrupt controller, it's a good idea to disable interrupts on startup, and then enable them after the interrupt controller is ready.
+
+Disabling interrupts is easy, we can do it somewhere in the assembly startup code in `startup.s`. At some point when the CPU is in supervisor mode, add the `cpsid if` instruction to disable all interrupts - the `if` part means both IRQs and FIQs. One possible place to do that would be right before the `bl main` instruction that jumps to C code.
+
+Enabling interrupts is done similarly, with the `cpsie if` instruction. We'll want to call this from C code eventually so it's convenient to create a C function with inline assembly in some header file, like this:
+
+```
+inline void cpu_enable_interrupts(void) {
+    asm ("cpsie if");
+}
+```
+
+Looks like we're done! Just to make sure the new functions are getting used, call `gic_init()` and then `cpu_enable_interrupts()` from somewhere in the `main` function (after the initial UART outputs perhaps). At this point you can try building the program (remember to add `gic.c` to the source file list in `CMakeLists.txt`), but surprisingly enough, the program won't compile, and you'll get an error like
+
+```
+/tmp/ccluurNJ.s:146: Error: selected processor does not support `cpsie if' in ARM mode
+```
+
+This is our first practical encounter with the fact that ARMv7 (same goes for some other ARM architectures) has two instruction sets, ARM and Thumb (Thumb version 2 to be exact). Thumb instructions are smaller at 16 bits compared to the 32 bits of an ARM instruction, and so can be more efficient, at the cost of losing some flexibility. ARM CPUs can freely switch between the two instruction sets, but Thumb should be the primary choice. In the above error message, GCC is telling us that `cpsie if` is not available as an ARM instruction. It is indeed not, it's a Thumb instruction. We need to change the compiler options and add `-mthumb` to request generation of Thumb code. In `CMakeLists.txt`, that means editing the line that sets `CMAKE_C_FLAGS`. After adding `-mthumb` to it we can try to recompile. The interrupt-enabling instruction no longer causes any problems but another issue crops up:
+
+```
+/tmp/ccC72j7I.s:37: Error: selected processor does not support `mrc p15,#4,r2,c15,c0,#0' in Thumb mode
+```
+
+Indeed, accessing the coprocessors is only possible with ARM instructions. The `mrc` instruction does not exist in the Thumb instruction set. It's possible to control the CPU's instruction set and freely switch between the two, but fortunately, GCC can figure things out by itself if we tell it what specific CPU we're using. So far we've just been compiling for a generic ARM CPU, but we can easily specify the CPU by also adding `-mcpu=cortex-a9` to the compilation flags. So now with `-mthumb -mcpu=cortex-a9` added to the compile flags, we can finally compile and run the application just as before.
+
+You should see that the program works just like it did at the end of the previous chapter. Indeed, we've enabled the GIC, and have interrupts enabled globally for the CPU, but we haven't enabled any specific interrupts yet, so the GIC will never forward any interrupts that may get triggered.
+
+## Handling an interrupt
+
+Let's now put the GIC to use and enable the UART interrupt, which should be triggered any time the UART receives data, which corresponds to us pressing a key in the terminal when running with QEMU. After receiving an interrupt, we'll need to properly handle it to continue program execution.

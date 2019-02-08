@@ -18,6 +18,8 @@ _Reset:
 
 .section .text
 Reset_Handler:
+    ldr r0, =0x60000000
+    mcr p15, #0, r0, c12, c0, #0
     /* FIQ stack */
     msr cpsr_c, MODE_FIQ
     ldr r1, =_fiq_stack_start
@@ -45,9 +47,6 @@ irq_loop:
     ldr r1, =_stack_start
     ldr sp, =_stack_end
 
-    /* Disable supervisor mode interrupts */
-    cpsid if
-
 stack_loop:
     cmp r1, sp
     strlt r0, [r1], #4
@@ -73,6 +72,9 @@ bss_loop:
     cmp r1, r2
     strlt r0, [r1], #4
     blt bss_loop
+
+    /* Disable supervisor mode interrupts */
+    cpsid if
 
     bl main
     b Abort_Exception

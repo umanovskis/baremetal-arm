@@ -34,7 +34,8 @@ int main() {
         uart_write("Type below...\n");
 	gic_init();
 	gic_enable_interrupt(37);
-	//cpu_enable_interrupts();
+	cpu_enable_interrupts();
+	volatile uint32_t dbg = gic_acknowledge_interrupt();
 
         while (1) {
             char c;
