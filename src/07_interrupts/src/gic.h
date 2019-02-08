@@ -42,7 +42,8 @@ typedef volatile struct __attribute__((packed)) {
 
 void gic_init(void);
 void gic_enable_interrupt(uint16_t number);
-void gic_trigger_interrupt(uint16_t number);
+uint16_t gic_acknowledge_interrupt();
+void gic_end_interrupt(uint16_t number);
 
 #define GIC_DIST_BASE   ((cpu_get_periphbase() + GIC_DISTRIBUTOR_OFFSET))
 #define GIC_IFACE_BASE  ((cpu_get_periphbase() + GIC_IFACE_OFFSET))
@@ -51,5 +52,6 @@ void gic_trigger_interrupt(uint16_t number);
 #define CCTRL_ENABLE    (1u)
 
 #define CIAR_ID_MASK	(0x3FFu)
+#define CEOIR_ID_MASK	(0x3FFu)
 
 #endif

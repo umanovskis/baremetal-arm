@@ -66,6 +66,8 @@ typedef struct {
 #define IMSC_RXIM	(1u << 4u)
 #define IMSC_TXIM	(1u << 5u)
 
+#define ICR_ALL_MASK	(0x7FFu)
+
 uart_error uart_configure(uart_config* config);
 void uart_putchar(char c);
 void uart_write(const char* data);

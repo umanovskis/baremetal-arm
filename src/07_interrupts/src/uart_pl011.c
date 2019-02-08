@@ -111,5 +111,10 @@ uart_error uart_getchar(char* c) {
 }
 
 void __attribute__((interrupt)) uart_isr(void) {
-    uart_write("Interrupt!\n");
+    uint16_t irq = gic_acknowledge_interrupt();
+    if (irq == 37) {
+	    uart_write("Interrupt!\n");
+    }
+    uart0->ICR = ICR_ALL_MASK;
+    gic_end_interrupt(37);
 }

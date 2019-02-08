@@ -31,11 +31,10 @@ void gic_enable_interrupt(uint16_t number) {
     WRITE32(gic_dregs->DITARGETSR[reg], reg_val);
 }
 
-uint32_t gic_acknowledge_interrupt(void) {
+uint16_t gic_acknowledge_interrupt(void) {
     return gic_ifregs->CIAR & CIAR_ID_MASK;
 }
 
-uint32_t gic_end_interrupt(uint8_t number) {
-    WRITE32(gic_ifregs->EOIR, (number & EOIR_ID_MASK));
+void gic_end_interrupt(uint16_t number) {
+    WRITE32(gic_ifregs->CEOIR, (number & CEOIR_ID_MASK));
 }
-```
