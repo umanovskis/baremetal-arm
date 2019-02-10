@@ -512,3 +512,78 @@ void __attribute__((interrupt)) irq_handler(void) {
 This top-level `irq_handler` should then be pointed to by the vector table, and adding support for new interrupts would just mean adding them to the `switch` statement. The top-level handler takes care of the GIC acknowledge/end-of-interrupt calls, so individual handlers like `uart_isr` no longer have to do it, nor do they need the `__attribute__((interrupt))` anymore because the top-level handler is where the switch to IRQ mode should happen.
 
 Purely from an embedded code perspective, there's no problem with such a handler and having a long list of interrupts in the `switch` statement. It's not a great solution in terms of general software design though. It creates quite tight coupling between the top-level IRQ handler, which should be considered to be a separate module from the GIC, and the handler would have to know about all other relevant modules. If we place the above handler into a separate file like `irq.c`, it would have to include `uart_pl011.h` for the header's declaration of `uart_isr`. If we then add a timer module, `irq.c` would also need to include `timer.h` and `irq_handler` would have to be modified to call some timer ISR, which is not a good, maintainable way to structure the code.
+
+A better solution is to make the IRQ handler use callbacks, and allow individual modules to register those callbacks. We can then offload some important work to a separate IRQ component, with `irq.h`:
+
+```
+#ifndef IRQ_H
+#define IRQ_H
+
+#include <stdint.h>
+
+typedef void (*isr_ptr)(void);
+
+#define ISR_COUNT   (1024)
+#define MAX_ISR     (ISR_COUNT - 1)
+
+
+typedef enum {
+    IRQ_OK = 0,
+    IRQ_INVALID_IRQ_ID,
+    IRQ_ALREADY_REGISTERED
+} irq_error;
+
+irq_error irq_register_isr(uint16_t irq_number, isr_ptr callback);
+
+#endif
+```
+
+The header defines a function `irq_register_isr` that other modules would then call to register their own ISRs. The `isr_ptr` type is a function pointer to an ISR - `typedef void (*isr_ptr)(void);` means that `isr_ptr` is a pointer to a function that returns `void` and takes no parameters. If the syntax is confusing, take a moment to read up on C function pointers online - conceptually function pointers are not difficult but the syntax tends to feel obscure until you get used to it.
+
+The implementation in `irq.c` is:
+
+```
+#include <stddef.h>
+#include "irq.h"
+#include "gic.h"
+
+static isr_ptr callbacks[1024] = { NULL };
+
+static isr_ptr callback(uint16_t number);
+
+void __attribute__((interrupt)) irq_handler(void) {
+    uint16_t irq = gic_acknowledge_interrupt();
+    isr_ptr isr = callback(irq);
+    if (isr != NULL) {
+        isr();
+    }
+    gic_end_interrupt(irq);
+}
+
+irq_error irq_register_isr(uint16_t irq_number, isr_ptr callback) {
+    if (irq_number > MAX_ISR) {
+        return IRQ_INVALID_IRQ_ID;
+    } else if (callbacks[irq_number] != NULL) {
+        return IRQ_ALREADY_REGISTERED;
+    } else {
+        callbacks[irq_number] = callback;
+    }
+    return IRQ_OK;
+}
+
+static isr_ptr callback(uint16_t number) {
+    if (number > MAX_ISR) {
+        return NULL;
+    }
+    return callbacks[number];
+}
+```
+
+We use an array that can store up 1024 ISRs, which is enough to use all the interrupts the GIC supports if desired. The top-level `irq_handler` talks to the GIC and calls whatever ISR has been registered for the particular interrupt. The UART driver then registers its own ISR in `uart_init` just before enabling the UART peripheral, like this:
+
+```
+/* Register the interrupt */
+(void)irq_register_isr(UART0_INTERRUPT, uart_isr);
+```
+
+Such a solution no longer requires the IRQ handler to know which specific ISRs exist beforehand, and is easier to maintain.
