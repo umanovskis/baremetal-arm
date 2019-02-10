@@ -587,3 +587,13 @@ We use an array that can store up 1024 ISRs, which is enough to use all the inte
 ```
 
 Such a solution no longer requires the IRQ handler to know which specific ISRs exist beforehand, and is easier to maintain.
+
+## Summary
+
+In this chapter, we went over interrupt handling in general, the ARM Generic Interrupt Controller, and we wrote some interrupt handlers.
+
+Interrupts are often among the trickiest topics in embedded development. Interrupt controllers themselves are quite complicated - we used the GIC in pretty much the simplest way possible, but it can quickly get complicated once you start grouping interrupts, working with their priorities and so on. Another complication arises from the hard-to-predict nature of interrupts. You don't know what regular code will be executed when an interrupt happens. Many interrupts in the real world depend on timing or external data sources, so debugging with breakpoints affects the behavior of the program.
+
+As a broad generalization, interrupt handling becomes trickier and more important as you develop on more limited hardware. When dealing with microcontrollers, you often have to understand the amount of time spent in interrupts, and may also find that the switching between normal and IRQ modes creates real performance issues. Fast interrupts, FIQs, which we didn't cover in this chapter exist in ARMv7 to help alleviate the overhead of regular IRQs.
+
+In a real embedded system that does something useful, interrupts are likely to drive some critical parts of functionality. For example, most systems need some way of measuring time or triggering some code in a time-based manner, and that usually happens by having a timer that generates interrupts.
