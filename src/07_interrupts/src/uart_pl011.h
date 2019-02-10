@@ -39,7 +39,11 @@ typedef struct {
     uint32_t    baudrate;
 } uart_config;
 
+#define UART0_INTERRUPT (37u)
+
 #define DR_DATA_MASK    (0xFFu)
+
+#define ECR_BE		(1 << 2u)
 
 #define FR_BUSY         (1 << 3u)
 #define FR_RXFE         (1 << 4u)
@@ -65,6 +69,9 @@ typedef struct {
 
 #define IMSC_RXIM	(1u << 4u)
 #define IMSC_TXIM	(1u << 5u)
+
+#define RX_INTERRUPT	(1u << 4u)
+#define BE_INTERRUPT	(1u << 9u)
 
 #define ICR_ALL_MASK	(0x7FFu)
 

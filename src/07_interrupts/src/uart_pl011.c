@@ -110,11 +110,20 @@ uart_error uart_getchar(char* c) {
     return UART_OK;
 }
 
-void __attribute__((interrupt)) uart_isr(void) {
-    uint16_t irq = gic_acknowledge_interrupt();
-    if (irq == 37) {
-	    uart_write("Interrupt!\n");
+void uart_isr(void) {
+    uint32_t status = uart0->MIS;
+    if (status & RX_INTERRUPT) {
+        /* Read the received character and print it back*/
+        char c = uart0->DR & DR_DATA_MASK;
+        uart_putchar(c);
+        if (c == '\r') {
+            uart_write("\n");
+        }
+    } else if (status & BE_INTERRUPT) {
+        uart_write("Break error detected!\n");
+        /* Clear the error flag */
+        uart0->RSRECR = ECR_BE;
+        /* Clear the interrupt */
+        uart0->ICR = BE_INTERRUPT;
     }
-    uart0->ICR = ICR_ALL_MASK;
-    gic_end_interrupt(37);
 }
