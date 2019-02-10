@@ -254,7 +254,9 @@ Bit manipulation is usually a very important part of driver code, such as the ab
 Assuming that `b` is one bit,
 
 `x |= b` sets bit `b` in `x`
+
 `x &= ~b` clears bit `b` in `x`
+
 `x & b` checks if `b` is set
 
 One bit in position `n` can be conveniently written as `1` left-shifted `n` places. E.g. bit 4 is `1 << 4` and bit 0 is `1 << 0`
