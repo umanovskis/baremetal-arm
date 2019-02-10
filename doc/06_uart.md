@@ -462,7 +462,7 @@ We've written our first driver that interfaces with the hardware directly, and w
 
 Unsurprisingly, the driver written in this chapter is not perfect. Some possibilities for improvement:
 
-* Interrupt handling. Currently the driver is being used in polling mode, constantly asking it if new characters have been received. In most practical cases, polling is too inefficient and interrupts are desired.
+* Interrupt handling. Currently the driver is being used in polling mode, constantly asking it if new characters have been received. In most practical cases, polling is too inefficient and interrupts are desired. This is something that the next chapter handles.
 
 * More robustness. Error handling, sanity checks and other measures preventing the driver from being incorrectly are good! The driver could return different error codes for different types of receive errors instead of lumping them all together. The driver could keep track of its own status and prevent functions like `uart_write` from executing before the configuration has been done with `uart_configure`.
 
