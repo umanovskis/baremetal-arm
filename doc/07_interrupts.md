@@ -53,15 +53,15 @@ That last part sounds confusing. What's with that implementation-defined locatio
 
 Remember that ARMv7-A is not a CPU. It's a CPU architecture. In this architecture, interrupts are supported as just discussed, and there's always the possibility to use an interrupt handler at `0x18` bytes into the vector table. That is, however, not always convenient. Consider that there can be many different interrupt sources, while the vector table can only contain one branch instruction at `0x18`. This means that the the function taking care of interrupts would first have to figure out which interrupt was triggered, and then act appropriately. Such an approach puts extra burden on the CPU as it has to check all possible interrupt sources.
 
-The solution to that is known as vectored interrupts. In a vectored interrupt system, each interrupt has its own vector (a unique ID). Then some kind of interrupt controller is in place that knows which ISR to route each interrupt vector to.
+The solution to that is known as vectored interrupts. In a vectored interrupt system, each interrupt has its own vector (a unique ID). Then some kind of vectored interrupt controller is in place that knows which ISR to route each interrupt vector to.
 
-The ARMv7-A architecture has numerous implementations, as in specific CPUs. The architecture description says that vectored interrupts may be supported, but the details are left up to the implementation. The choice of which interrupt system to use, though, is controlled by the architecture-defined `SCTLR` register.
-
-We want to use vectored interrupts eventually, though the first attempt can be non-vectored. Mentally noting the fact that `SCTRL` needs to have the `VE` bit set to `1` for vectored interrupts, it's time to turn to the manual for the specific implementation we're programming for.
+The ARMv7-A architecture has numerous implementations, as in specific CPUs. The architecture description says that vectored interrupts may be supported, but the details are left up to the implementation. The choice of which interrupt system to use, though, is controlled by the architecture-defined `SCTLR` register. In our case, implementation-defined will mean that vectored interrupts are not supported - the CPU we're using doesn't allow vectored interrupts.
 
 ## Generic Interrupt Controller of the Cortex-A9
 
 We're programming for a CoreTile Express A9x4 daughterboard, which contains the Cortex-A9 MPCore CPU. The MPCore means it's a CPU that can consist of one to four individual Cortex-A9 cores. So it's the [Cortex-A9 MPCore manual](https://static.docs.arm.com/ddi0407/h/DDI0407H_cortex_a9_mpcore_r4p0_trm.pdf) that becomes our next stop. There's a chapter in the manual for the interrupt controller - so far so good - but it immediately refers to another manual. Turns out that the Cortex-A9 has an interrupt controller of the *ARM Generic Interrupt Controller* type, for which there's a separate manual (note that GIC version 4.0 makes a lot of references to the ARMv8 architecture). The Cortex-A9 manual refers to version 1.0 of the GIC specification, but reading version 2.0 is also fine, there aren't too many differences and none in the basic features.
+
+The GIC is one of the major interrupt controller implementations. This is one of the area where the difference between A-profile and R-profile of ARMv7 matters. ARMv7-R CPUs such as the Cortex-R4 normally use a vectored controller like the appropriately named VIC.
 
 The GIC has its own set of SFRs that control its operation, and the GIC as a whole is responsible for forwarding interrupt requests to the correct A9 core in the A9-MPCore. There are two main components in the GIC - the Distributor and the CPU interfaces. The Distributor receives interrupt requests, prioritizes them, and forwards them to the CPU interfaces, each of which corresponds to an A9 core.
 
@@ -444,3 +444,71 @@ void __attribute__((interrupt)) uart_isr(void) {
 ```
 
 With that interrupt handler, our program will write `Interrupt!` every time you press a key in the terminal, after which it will resume normal execution. You can verify for yourself that the CPU returns to the supervisor (SVC) mode after handling the interrupt. It can also be interesting to disassemble the ELF file and note how the code for `uart_isr` differs from any other functions - GCC will have generated `stmdb` and `ldmia` instructions to save several registers to the stack and restore them later.
+
+## Adapting the UART driver
+
+We now finally have working interrupt handling with a properly functional ISR that handles an interrupt, clears the interrupt source and passes control back to whatever code was running before the interrupt. Next let us apply interrupts in a useful manner, by adapting the UART driver and making the interrupts do something useful.
+
+The first thing to note is that what we've been calling "the UART interrupt" is a specific interrupt signal, `UART0INT` that the motherboard forwards to the GIC. From the point of view of the PL011 UART itself though, several different interrupts exist. The PL011 manual has a section devoted to interrupts, which lists eleven different interrupts that the peripheral can generate, and it also generates an interrupt `UARTINTR` that is an OR of the individual interrupts (that is, `UARTINTR` is active if any of the others is). It's this `UARTINTR` that corresponds to the interrupt number 37 which we enabled, but our driver code should check which interrupt occurred specifically and react accordingly.
+
+The `UARTMIS` register can be used to read the masked interrupt status, with the `UARTRIS` providing the raw interrupt status. The difference between those is that, if an interrupt is masked (disabled) in the UART's configuration, it can still show as active in the raw register but not the masked one. By default all interrupts all unmasked (enabled) on the PL011 so this distinction doesn't matter for us. Of the individual UART interrupts, only the receive interrupt is really interesting in the basic use case, so let's implement that one properly, as well as one of the error interrupts.
+
+All interrupt-related PL011 registers use the same pattern, where bits 0-10 correspond to the same interrupts. The receive (RX) interrupt is bit 4, the break error (BE) interrupt is bit 9. We can express that nicely with a couple of defines:
+
+```
+#define RX_INTERRUPT	(1u << 4u)
+#define BE_INTERRUPT	(1u << 9u)
+```
+
+We're using the UART as a terminal, so when the receive interrupt occurs, we'd like to print the character that was received. If the break error occurs, we can't do much except clear the error flag (in the RSRECR register) and write an error message. Let's write a new ISR that checks for the actual underlying UART interrupt and reacts accordingly.
+
+```
+void __attribute__((interrupt)) uart_isr(void) {
+    (void)gic_acknowledge_interrupt();
+
+    uint32_t status = uart0->MIS;
+    if (status & RX_INTERRUPT) {
+        /* Read the received character and print it back*/
+        char c = uart0->DR & DR_DATA_MASK;
+        uart_putchar(c);
+        if (c == '\r') {
+            uart_write("\n");
+        }
+    } else if (status & BE_INTERRUPT) {
+        uart_write("Break error detected!\n");
+        /* Clear the error flag */
+        uart0->RSRECR = ECR_BE;
+        /* Clear the interrupt */
+        uart0->ICR = BE_INTERRUPT;
+    }
+
+    gic_end_interrupt(UART0_INTERRUPT);
+}
+```
+
+In the previous chapter, we had a loop in `main` that polled the UART. That is no longer necessary, but remember that `main` should not terminate so the `while (1)` loop should still be there. The terminal functionality is now available and interrupt-driven!
+
+## Handling different interrupt sources
+
+The interrupt handling solution at this point has a major flaw. No matter what interrupt the CPU receives, the `b uart_isr` from the vector table will take us to that interrupt handler, which is of course only suitable for the UART interrupt. Early on in this chapter, there was mention of vectored interrupts, which we cannot use since our hardware uses the GIC, a non-vectored interrupt controller. Therefore we'll need to use a software solution, writing a top-level interrupt handler that will be responsible for finding out which interrupt got triggered and then calling the appropriate function.
+
+In the simplest case, we'd then write a function like the following:
+
+```
+void __attribute__((interrupt)) irq_handler(void) {
+        uint16_t irq = gic_acknowledge_interrupt();
+        switch (irq) {
+        case UART0_INTERRUPT:
+            uart_isr();
+            break;
+        default:
+            uart_write("Unknown interrupt!\n");
+            break;
+        }
+        gic_end_interrupt(irq);
+}
+```
+
+This top-level `irq_handler` should then be pointed to by the vector table, and adding support for new interrupts would just mean adding them to the `switch` statement. The top-level handler takes care of the GIC acknowledge/end-of-interrupt calls, so individual handlers like `uart_isr` no longer have to do it, nor do they need the `__attribute__((interrupt))` anymore because the top-level handler is where the switch to IRQ mode should happen.
+
+Purely from an embedded code perspective, there's no problem with such a handler and having a long list of interrupts in the `switch` statement. It's not a great solution in terms of general software design though. It creates quite tight coupling between the top-level IRQ handler, which should be considered to be a separate module from the GIC, and the handler would have to know about all other relevant modules. If we place the above handler into a separate file like `irq.c`, it would have to include `uart_pl011.h` for the header's declaration of `uart_isr`. If we then add a timer module, `irq.c` would also need to include `timer.h` and `irq_handler` would have to be modified to call some timer ISR, which is not a good, maintainable way to structure the code.
