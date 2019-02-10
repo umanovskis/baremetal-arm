@@ -5,17 +5,6 @@
 #include "cpu.h"
 #include "gic.h"
 
-char buf[64];
-uint8_t buf_idx = 0u;
-
-static void parse_cmd(void) {
-    if (!strncmp("help\r", buf, strlen("help\r"))) {
-        uart_write("Just type and see what happens!\n");
-    } else if (!strncmp("uname\r", buf, strlen("uname\r"))) {
-        uart_write("bare-metal arm 06_uart\n");
-    }
-}
-
 int main() {
         uart_config config = {
             .data_bits = 8,
@@ -30,25 +19,26 @@ int main() {
         uart_putchar('C');
         uart_putchar('\n');
 
-        uart_write("I love drivers!\n");
-        uart_write("Type below...\n");
+        uart_write("Welcome to Chapter 7, Interrupts!\n");
 	gic_init();
-	gic_enable_interrupt(37);
+	gic_enable_interrupt(UART0_INTERRUPT);
 	cpu_enable_interrupts();
 
-        while (1) {
-            char c;
-            if (uart_getchar(&c) == UART_OK) {
-                uart_putchar(c);
-                buf[buf_idx % 64] = c;
-                buf_idx++;
-                if (c == '\r') {
-                    uart_write("\n");
-                    buf_idx = 0u;
-                    parse_cmd();
-                }
-            }
-        }
+        while (1) { }
 
         return 0;
 }
+
+void __attribute__((interrupt)) irq_handler(void) {
+        uint16_t irq = gic_acknowledge_interrupt();
+        switch (irq) {
+        case UART0_INTERRUPT:
+            uart_isr();
+            break;
+        default:
+            uart_write("Unknown interrupt!\n");
+            break;
+        }
+        gic_end_interrupt(irq);
+}
+
