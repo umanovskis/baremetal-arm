@@ -18,8 +18,10 @@ _Reset:
 
 .section .text
 Reset_Handler:
+    /* Change the vector table base address */
     ldr r0, =0x60000000
     mcr p15, #0, r0, c12, c0, #0
+
     /* FIQ stack */
     msr cpsr_c, MODE_FIQ
     ldr r1, =_fiq_stack_start

@@ -29,16 +29,3 @@ int main() {
         return 0;
 }
 
-void __attribute__((interrupt)) irq_handler(void) {
-        uint16_t irq = gic_acknowledge_interrupt();
-        switch (irq) {
-        case UART0_INTERRUPT:
-            uart_isr();
-            break;
-        default:
-            uart_write("Unknown interrupt!\n");
-            break;
-        }
-        gic_end_interrupt(irq);
-}
-

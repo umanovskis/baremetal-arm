@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include "uart_pl011.h"
+#include "irq.h"
 
 static uart_registers* uart0 = (uart_registers*)0x10009000u;
 const uint32_t refclock = 24000000u; /* 24 MHz */
@@ -78,6 +79,9 @@ uart_error uart_configure(uart_config* config) {
     uart0->LCRH = lcrh;
 
     uart0->IMSC |= IMSC_RXIM;
+
+    /* Register the interrupt */
+    (void)irq_register_isr(UART0_INTERRUPT, uart_isr);
 
     /* Enable the UART */
     uart0->CR |= CR_UARTEN;
