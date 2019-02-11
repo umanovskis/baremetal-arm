@@ -8,7 +8,7 @@ Let us run QEMU for the very first time, with the following command:
 qemu-system-arm -M vexpress-a9 -m 32M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait
 ```
 
-It should take some time as the QEMU machine spins up, after which it should crash with an error message. The crash is to be expected - we did not provide any executable to run so of course our emulated system cannot accomplish anything. For documenation of the QEMU command line, you can check `man qemu-doc` and online, but let's go through the command we used and break it down into parts.
+The QEMU machine will spin up, briefly seem to do nothing, and then crash with an error message. The crash is to be expected - we did not provide any executable to run so of course our emulated system cannot accomplish anything. For documenation of the QEMU command line, you can check `man qemu-doc` and online, but let's go through the command we used and break it down into parts.
 
 * `-M vexpress-a9`. The `-M` switch selects the specific machine to be emulated. The [ARM Versatile Express](http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.subset.boards.express/index.html) is an ARM platform intended for prototyping and testing. Hardware boards with the Versatile Express platform exist, and the platform is also a common choice for testing with emulation. The `vexpress-a9` variant has the Cortex A9 CPU, which powers a wide variety of embedded devices that perform computationally-intensive tasks.
 
@@ -182,6 +182,14 @@ SECTIONS
 
 This script tells the linker that the program's entry point is at the global symbol `_Entry`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
 
+## What's a linker anyway?
+
+Indeed, what's a linker and why are we using one? As developers, we often say "compilation" when referring to the process by which source code turns into an executable. More accurately though, compilation is just one step, normally followed by linking, and it's this compile-and-link process that often gets simply called compilation. The confusion isn't helped by the fact that compiling and linking are usually invoked with the same command in most tools. Whether you're using an IDE or using GCC from the command line, compilation and linking will usually occur together.
+
+The compiler takes source code and produces *object files* as the output, these files usually have the `.o` extension. A linker takes one or more object files, possibly adds external libraries, and links it all into an executable. In any non-trivial program, each object file is likely to refer to functions that are contained in other object files, and resolving those dependencies is part of the linker's job. So linkers themselves are nothing specific to embedded programming, but due to the low abstraction level available when programming for bare metal, it's common to require more control over the linker's actions.
+
+Linker scripts like the one above, in the broadest terms, tell the linker how to do its job. For now we're just giving it simple instructions, but later we'll write a more sophisticated linker script.
+
 ## Hanging again - but better
 
 We can now build the updated software. Let's do that in a similar manner to before:
@@ -196,4 +204,4 @@ Note the addition of `-T linkscript.ld` to the linker command, specifying to use
 
 We can now once again run the software in QEMU with `qemu-system-arm -M vexpress-a9 -m 32M -no-reboot -nographic -monitor telnet:127.0.0.1:1234,server,nowait -kernel better-hang.bin` and observe the same results as before, and happily knowing things are now done in a more proper way.
 
-In the next part, we will continue by introducing a bootloader into our experiments.
+In the next chapter, we will continue by introducing a bootloader into our experiments.

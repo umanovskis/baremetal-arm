@@ -8,11 +8,13 @@ Modern embedded hardware comes in very many types, but the field is dominated by
 
 The subject of this ebook is bare-metal programming in C for an ARM system. Specifically, the ARMv7-A architecture is used, which is the last purely 32-bit ARM architecture, unlike the newer ARMv8/AArch64. The -A suffix in ARMv7-A indicates the A profile, which is intended for more resource-intensive applications. The corresponding microcontroller architecture is ARMv7-M.
 
+Note that this is not a tutorial on how to write an OS. Some of the topics covered in this ebook are relevant for OS development, but there are many OS-specific aspects that are not covered here.
+
 ## Target audience
 
 This ebook is aimed at people who have an interest in low-level programming, and in seeing how to build a system from the ground up. Topics covered include system startup, driver development and low-level memory management. For the most part, the chapters cover things from a practical perspective, by building something, although background theory is provided.
 
-The reader should be familiar with C programming. This is not a C tutorial, and even though there are occasional notes on the language, the ebook is probably difficult to follow without having programmed in C. Some minimal exposure to an assembly language and understanding of computer architecture are very useful, though the assembly code presented is explained line by line.
+The reader should be familiar with C programming. This is not a C tutorial, and even though there are occasional notes on the language, the ebook is probably difficult to follow without having programmed in C. Some minimal exposure to an assembly language and understanding of computer architecture are very useful, though the assembly code presented is explained line by line as it's introduced.
 
 It's also helpful to be familiar with Linux on a basic level. You should be able to navigate directories, run shell scripts and do basic troubleshooting if something doesn't work - fortunately, even for an inexperienced Linux user, a simple online search is often enough to solve a problem. The ebook assumes all development is done on Linux, although it should be possible to do it on OS X and even on Windows with some creativity.
 

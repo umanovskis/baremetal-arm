@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The *bootloader* is a critical piece of software that is necessary to get the hardware into a usable state, and load other more useful programs, such as an operating system. On PCs and other fully-featured devices, common bootloaders include GNU GRUB (which is most likely used to boot your Linux system), bootmgr (for modern versions of MS Windows) and others. Developing bootloaders is a separate and complicated subject. Bootloaders are generally full of esoteric, highly architecture-specific code, and in my opinion learning about bootloaders if fun, but the knowledge is also somewhat less transferable to other areas of development.
+The *bootloader* is a critical piece of software that is necessary to get the hardware into a usable state, and load other more useful programs, such as an operating system. On PCs and other fully-featured devices, common bootloaders include GNU GRUB (which is most likely used to boot your Linux system), `bootmgr` (for modern versions of MS Windows) and others. Developing bootloaders is a separate and complicated subject. Bootloaders are generally full of esoteric, highly architecture-specific code, and in my opinion learning about bootloaders if fun, but the knowledge is also somewhat less transferable to other areas of development.
 
 Writing your own bootloader is certainly something that could be attempted, but in this series of posts we will continue by doing something that is usually done in embedded development, namely using Das U-Boot.
 
@@ -46,7 +46,7 @@ The purpose of that will become clear a bit later on. Then open `include/config_
         "\0"
 ```
 
-Note that in the above snippet, the first line with `done\0` was already in the file, but we add a backslash `\` to the end, and then we add the subsequent lines. Regenerate the U-Boot config and rebuild it:
+Note that in the above snippet, the first line with `done\0` was already in the file, but we add a backslash `\` to the end, and then we add the subsequent lines. [See the edited file in the repository](../src/common_uboot/include/config_distro_bootcmd.h). Regenerate the U-Boot config and rebuild it:
 
 ```
 make vexpress_ca9x4_config ARCH=arm CROSS_COMPILE=arm-none-eabi-
@@ -152,4 +152,12 @@ Better yet, the modifications we made earlier to U-Boot allow it to perform this
 
 If you start QEMU again and don't press any keys to pause U-Boot, you should see  If you type `printenv bootcmd_bare_arm` in the U-Boot command-line, you'll see the boot sequence. If you start QEMU again and don't press any keys to pause U-Boot, you should see the boot continue automatically.
 
-Having now completed a boot sequence fairly similar to real hardware, we can continue with our own programming. In the next part, we'll continue by getting some C code running.
+---
+
+**NOTE**
+
+Modifying the U-Boot source code in order to save a command sequence may seem strange, and indeed we're doing that because of QEMU emulation. Normally, running U-Boot from a writable device such as a SD card would let us use U-Boot's `setenv` and `saveenv` commands to permanently save changes without recompiling the whole bootloader.
+
+---
+
+Having now completed a boot sequence fairly similar to real hardware, we can continue with our own programming. In the next chapter, we'll continue by getting some C code running.

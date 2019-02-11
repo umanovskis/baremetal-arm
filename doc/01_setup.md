@@ -42,7 +42,7 @@ You can run `arm-none-eabi-gcc --version` to check the version number. If you're
 
 ## Build system essentials
 
-Finally, we need the essential components of a build system. In the coming examples, we'll be using the standard Make build tool, as well as CMake. Debuan-based systems provide a handy package called `build-essential`, which installs Make and other relevant programs. CMake is available in a package called `cmake`, so the installation is simple:
+Finally, we need the essential components of a build system. In the coming examples, we'll be using the standard Make build tool, as well as CMake. Debian-based systems provide a handy package called `build-essential`, which installs Make and other relevant programs. CMake is available in a package called `cmake`, so the installation is simple:
 
 ```
 sudo apt-get install build-essential cmake
