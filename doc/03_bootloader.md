@@ -106,7 +106,7 @@ The script creates a 64 megabyte SD card image, mounts it as a network block dev
 ./create-sd.sh sdcard.img bare-arm.uimg
 ```
 
-to create an image called `sdcard.img` and copy the `bare-arm.uimg` uImage onto the emulated SD card.
+to create an image called `sdcard.img` and copy the `bare-arm.uimg` uImage onto the emulated SD card (we'll create the image below, running the command at this point will fail).
 
 ---
 
