@@ -52,17 +52,16 @@ typedef struct {
 #define RSRECR_ERR_MASK (0xFu)
 
 #define LCRH_FEN        (1 << 4u)
-#define LCRH_WLEN       (1 << 6u)
 #define LCRH_PEN        (1 << 1u)
 #define LCRH_EPS        (1 << 2u)
 #define LCRH_STP2       (1 << 3u)
 #define LCRH_SPS        (1 << 7u)
 #define CR_UARTEN       (1 << 0u)
 
-#define LCRH_WLEN_5BITS (0u << 6u)
-#define LCRH_WLEN_6BITS (1u << 6u)
-#define LCRH_WLEN_7BITS (2u << 6u)
-#define LCRH_WLEN_8BITS (3u << 6u)
+#define LCRH_WLEN_5BITS (0u << 5u)
+#define LCRH_WLEN_6BITS (1u << 5u)
+#define LCRH_WLEN_7BITS (2u << 5u)
+#define LCRH_WLEN_8BITS (3u << 5u)
 
 #define IFLS_RXFL_1_8	(0u << 5u)
 #define IFLS_TXFL_1_8	(0u << 2u)
