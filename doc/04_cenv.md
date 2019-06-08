@@ -72,7 +72,7 @@ We load the end address of the FIQ stack into `SP`, and the start address into `
     movt r0, #0xFEFE
 ```
 
-These two lines just write the value `0xFEFEFEFE` to `R0`. ARM assembly has limitations on what values can be directly loaded into a register with the `mov` instruction, so one common way to load a 4-byte constant into a register is to use `movw` and `movt` together. In general `movw r0, x; movw r0, y` corresponds to loading `x << 16 | y` into `R0`.
+These two lines just write the value `0xFEFEFEFE` to `R0`. ARM assembly has limitations on what values can be directly loaded into a register with the `mov` instruction, so one common way to load a 4-byte constant into a register is to use `movw` and `movt` together. In general `movt r0, x; movw r0, y` corresponds to loading `x << 16 | y` into `R0`.
 
 ```
 fiq_loop:
