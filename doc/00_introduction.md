@@ -45,4 +45,4 @@ The ebook is licensed under Creative Commons Attribution-Share Alike (CC-BY-SA) 
 
 ## Credits and acknowledgments
 
-The PDF version of this ebook is typeset using the [Eisvogel LaTeX template](https://github.com/umanovskis/pandoc-latex-template) by Pascal Wagler.
+The PDF version of this ebook is typeset using the [Eisvogel LaTeX template](https://github.com/Wandmalfarbe/pandoc-latex-template) by Pascal Wagler.
