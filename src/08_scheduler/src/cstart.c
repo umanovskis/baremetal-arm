@@ -21,7 +21,7 @@ int main() {
 	gic_enable_interrupt(PTIMER_INTERRUPT);
 	cpu_enable_interrupts();
 
-	if (ptimer_init(1000u) != PTIMER_OK) {
+	if (ptimer_init(1u) != PTIMER_OK) {
 	    uart_write("Failed to initialize CPU timer!\n");
 	}
 

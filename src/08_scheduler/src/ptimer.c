@@ -1,7 +1,7 @@
 #include <stdbool.h>
 #include "ptimer.h"
 #include "irq.h"
-#include "uart_pl011.h"
+#include "systime.h"
 
 static private_timer_registers* regs;
 static const uint32_t refclock = 24000000u; /* 24 MHz */
@@ -27,11 +27,8 @@ static bool validate_config(uint16_t millisecs) {
 }
 
 static uint32_t millisecs_to_timer_value(uint16_t millisecs) {
-    uint32_t freq = millisecs * 1000u;
-    uint64_t numerator = freq * refclock;
-    uint32_t value = numerator - 1;
     double period = millisecs * 0.001;
-    value = (period * refclock) - 1;
+    uint32_t value = (period * refclock) - 1;
     value *= 3; /* Additional QEMU slowdown factor */
 
     return value;
@@ -40,7 +37,7 @@ static uint32_t millisecs_to_timer_value(uint16_t millisecs) {
 ptimer_error ptimer_init(uint16_t millisecs) {
     regs = (private_timer_registers*)PTIMER_BASE;
     if (!validate_config(millisecs)) {
-	return PTIMER_INVALID_PERIOD;
+        return PTIMER_INVALID_PERIOD;
     }
     uint32_t load_val = millisecs_to_timer_value(millisecs);
     WRITE32(regs->LR, load_val); /* Load the initial timer value */
@@ -55,6 +52,6 @@ ptimer_error ptimer_init(uint16_t millisecs) {
 }
 
 void ptimer_isr(void) {
-    uart_write("Ptimer!\n");
     WRITE32(regs->ISR, ISR_CLEAR); /* Clear the interrupt */
+    systime_tick();
 }

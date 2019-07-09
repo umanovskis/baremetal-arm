@@ -22,9 +22,9 @@ typedef enum {
 #define CTRL_AUTORELOAD     (1 << 1u)
 #define CTRL_ENABLE         (1u)
 
-#define ISR_CLEAR	    (1u)
+#define ISR_CLEAR           (1u)
 
-#define PTIMER_INTERRUPT    (29u + 0u)
+#define PTIMER_INTERRUPT    (29u)
 
 void ptimer_isr(void);
 ptimer_error ptimer_init(uint16_t millisecs);
