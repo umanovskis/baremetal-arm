@@ -1,10 +1,9 @@
-#include <stdbool.h>
 #include <math.h>
 #include "uart_pl011.h"
 #include "irq.h"
 
 static uart_registers* uart0 = (uart_registers*)0x10009000u;
-const uint32_t refclock = 24000000u; /* 24 MHz */
+static const uint32_t refclock = 24000000u; /* 24 MHz */
 
 uart_error uart_init(void) {
 
