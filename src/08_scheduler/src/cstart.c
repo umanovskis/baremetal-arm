@@ -5,6 +5,8 @@
 #include "cpu.h"
 #include "gic.h"
 #include "ptimer.h"
+#include "tasks.h"
+#include "sched.h"
 
 int main() {
         uart_config config = {
@@ -25,7 +27,10 @@ int main() {
 	    uart_write("Failed to initialize CPU timer!\n");
 	}
 
-        while (1) { }
+        sched_add_task(&task1, 5000u);
+        sched_add_task(&task2, 2000u);
+
+        sched_run();
 
         return 0;
 }
