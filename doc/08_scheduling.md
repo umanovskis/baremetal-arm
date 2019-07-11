@@ -160,4 +160,172 @@ Cooperative scheduling is fairly common in low-resource embedded systems, and th
 
 ## Cooperative scheduler
 
+To implement a basic cooperative scheduler, we don't need much code. We need to keep track of what tasks exist in the system, how often they want to run, and then the scheduler should execute those tasks. The scheduler's header file can be written so:
 
+```
+#include "systime.h"
+
+typedef void (*task_entry_ptr)(void);
+
+typedef struct {
+    task_entry_ptr entry;
+    systime_t period;
+    systime_t last_run;
+} task_desc;
+
+typedef enum {
+    SCHED_OK = 0,
+    SCHED_TOO_MANY_TASKS
+} sched_error;
+
+#define MAX_NUM_TASKS (10u)
+
+sched_error sched_add_task(task_entry_ptr entry, systime_t period);
+void sched_run(void);
+```
+
+Each task should have an entry point, a function that returns `void` and has no parameters. A pointer to the entry point, together with the desired task period and the time of the last run, form the task descriptor in the `task_desc` type. The scheduler provides a function `sched_add_task`, which can add tasks to the scheduler at run-time. Let's look at the implementation. Here's how `sched.c` starts:
+
+```
+#include <stddef.h>
+#include <stdint.h>
+#include "sched.h"
+
+static task_desc task_table[MAX_NUM_TASKS] = {0};
+static int table_idx = 0;
+
+sched_error sched_add_task(task_entry_ptr entry, systime_t period) {
+    if (table_idx >= MAX_NUM_TASKS) {
+        return SCHED_TOO_MANY_TASKS;
+    }
+
+    task_desc task = {
+        .entry = entry,
+        .period = period,
+        .last_run = 0
+    };
+    task_table[table_idx++] = task;
+
+    return SCHED_OK;
+}
+```
+
+The `task_table` array is where all the task descriptors are kept. `sched_add_task` is pretty simple - if there's free space in the task table, the function creates a task descriptor and adds it to the table. The task's last run time is set to `0`. Then the interesting work happens in the scheduler's `sched_run`:
+
+```
+void sched_run(void) {
+    while (1) {
+        for (uint8_t i = 0; i < MAX_NUM_TASKS; i++) {
+            task_desc* task = &task_table[i];
+            if (task->entry == NULL) {
+                continue;
+            }
+
+            if (task->last_run + task->period <= systime_get()) { /* Overflow bug! */
+                task->last_run = systime_get();
+                task->entry();
+            }
+        }
+    }
+}
+```
+
+You may have noticed that the function is contained within an infinite `while (1)` loop. The scheduler isn't supposed to terminate, and `sched_run` will be able to replace the infinite loop that we've had in `main` all along.
+
+The actual work is done in the scheduler's `for`-loop, which loops through the entire task table, and looks for tasks whose time to run has come, that is, the system time has increased by at least `period` since the task's last run time stored in `last_run`. When the scheduler finds such a task, it updates the last run time and executes the task by calling its entry point.
+
+All that remains in order to test the scheduler is to add a couple of tasks, and schedule them in `main`.
+
+```
+void task1(void) {
+    systime_t start = systime_get();
+    uart_write("Entering task 1... systime ");
+    uart_write_uint(start);
+    uart_write("\n");
+    while (start + 1000u > systime_get());
+    uart_write("Exiting task 1...\n");
+}
+
+void task2(void) {
+    systime_t start = systime_get();
+    uart_write("Entering task 2... systime ");
+    uart_write_uint(start);
+    uart_write("\n");
+    while (start + 1000u > systime_get());
+    uart_write("Exiting task 2...\n");
+}
+```
+
+The above defines two tasks. Note how there's nothing special about those functions, it's sufficient for them to be `void` functions with no parameters for them to be scheduled with our implementation. Both tasks have the same behavior - print a message with the current system time, wait for `1000` system time ticks and exit with another message. To actually schedule them and hand control over to the scheduler, modify `main` to get rid of the infinite loop and instead do:
+
+```
+(void)sched_add_task(&task1, 5000u);
+(void)sched_add_task(&task2, 2000u);
+
+sched_run();
+```
+
+That will schedule task 1 to run every 5000 ticks (roughly 5 seconds) and task 2 for every 2000 ticks.
+
+---
+
+**NOTE**
+
+The tasks use `uart_write_uint` to print the current systime, a new function not part of the previously-written UART driver. We cannot use standard C library functions such as `sprintf` without performing additional work, so this new function is a quick way to output unsigned numbers like systime. For completeness, here's the implementation:
+
+```
+void uart_write_uint(uint32_t num) {
+    char buf[8];
+    int8_t i = 0;
+    while (num != 0) {
+        uint8_t remainder = num % 10;
+        buf[i++] = '0' + remainder;
+        num /= 10;
+    }
+    for (i--; i >= 0; i--) {
+        uart_putchar(buf[i]);
+    }
+}
+```
+
+---
+
+Running the system now should produce some output indicating the scheduler's hard at work.
+
+```
+Welcome to Chapter 8, Scheduling!
+Entering task 2... systime 2000
+Exiting task 2...
+Entering task 2... systime 4000
+Exiting task 2...
+Entering task 1... systime 5000
+Exiting task 1...
+Entering task 2... systime 6000
+Exiting task 2...
+Entering task 2... systime 8000
+Exiting task 2...
+Entering task 1... systime 10000
+Exiting task 1...
+Entering task 2... systime 11000
+Exiting task 2...
+Entering task 2... systime 13000
+Exiting task 2...
+Entering task 1... systime 15000
+Exiting task 1...
+Entering task 2... systime 16000
+Exiting task 2...
+```
+
+What does that tell us? Well, the scheduler seems to be working fine. Task 1 first gets executed at systime `5000`, which is enough time for task 2 to run twice, starting at times `2000` and `4000`. We can also see that this is very much not a real-time system, as the schedule we've provided serves as a suggestion for the scheduler but isn't strictly enforced. At systime `10000`, it's time for both tasks to be executed (task 1 for the 2nd time and task 2 for the 5th time), but task 1 gets the execution slot (due to having its entry earlier in the task table), and task 2 gets delayed until systime `11000`, when task 1 finishes.
+
+Life is good when you have a working scheduler, and indeed this kind of simple scheduler is pretty similar to what some embedded systems run in the real world. There are small improvements that can be made to the scheduler without fundamentally changing it, such as allowing each task to have a priority, so that the highest-priority task would be chosen at times when multiple tasks wish to run, such as at systime `10000` above.
+
+It is also easy to introduce some problems that a cooperative scheduler won't be able to manage well. For example, create a third task that just runs a `while (1);` loop. The scheduler will run the task and the system will hang with no hope of recovery. In a real system, a watchdog would probably be configured and reset everything, but a reset loop is not much better than a plain hang.
+
+In the scheduler's `sched_run` loop, you may have noticed a comment about an overflow bug on one line. After saying how spacecraft can get lost due to overflows, it wouldn't feel right to omit an example.
+
+```
+if (task->last_run + task->period <= systime_get()) { /* Overflow bug! */
+```
+
+The normal case for that line is straightforward - if at least `period` ticks have passed since `last_run`, the task needs to be run. How about when some of these variables approach `UINT32_MAX`, the maximum value they can hold? Suppose `last_run` is almost at the maximum value, e.g. `UINT32_MAX - 10` (that's `0xFF FF FF F5`). Let's say `period` is `100`. So the task ran at `UINT32_MAX - 10` ticks, took some time to complete, and the scheduler loop runs against at, for instance, systime `UINT32_MAX - 8`. Two ticks have passed since the last execution, so the task shouldn't run. But the calculation `last_run + period` is `UINT32_MAX - 10 + 100`, which overflows! Unsigned integers wrap around to zero on overflow, and so the result becomes `89`. That is less than the current system time, and the task will run again. And the problem will repeat in the next iteration as well, until eventually fixing itself after system time also overflows and wraps around to zero.
