@@ -108,7 +108,7 @@ void uart_write_uint(uint32_t num) {
         buf[i++] = '0' + remainder;
         num /= 10;
     }
-    for (; i >= 0; i--) {
+    for (i--; i >= 0; i--) {
         uart_putchar(buf[i]);
     }
 }
