@@ -3,7 +3,7 @@
 #include "sched.h"
 
 static task_desc task_table[MAX_NUM_TASKS] = {0};
-static int table_idx = 0;
+static uint_8 table_idx = 0;
 
 sched_error sched_add_task(task_entry_ptr entry, systime_t period) {
     if (table_idx >= MAX_NUM_TASKS) {
@@ -28,7 +28,8 @@ void sched_run(void) {
                 continue;
             }
 
-            if (task->last_run + task->period <= systime_get()) { /* Overflow bug! */
+            //if (task->last_run + task->period <= systime_get()) { /* Overflow bug! */
+            if (systime_get() - task->last_run >= task->period) {
                 task->last_run = systime_get();
                 task->entry();
             }

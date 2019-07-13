@@ -33,7 +33,7 @@ void do_amazing_things(void) {
 
 If you are reading the PDF version, note that longer lines of code have to get wrapped to fit within the page, but the indentation and line numbers inside each code block should help keep things clear.
 
-Due to some unfortunate historical legacy, there are two different definitions for data sizes in common use. There's the binary definition, where a kilobyte is 1024 bytes, and the metric definition, where a kilobyte is 1000 bytes. Throughout this ebook, all references to data quantities are in the binary sense.
+Due to some unfortunate historical legacy, there are two different definitions for data sizes in common use. There's the binary definition, where a kilobyte is 1024 bytes, and the metric definition, where a kilobyte is 1000 bytes. Throughout this ebook, all references to data quantities are in the binary sense. The meaning of "billion" in the book is `10^9`.
 
 ## Source code
 

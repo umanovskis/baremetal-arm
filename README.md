@@ -6,7 +6,7 @@ This repository contains a tutorial ebook concerning programming a bare-metal AR
 
 An up-to-date PDF version is [also available](http://umanovskis.se/files/arm-baremetal-ebook.pdf).
 
-This is still a work in progress. Currently available:
+The following chapters can be thought of as the first edition of the ebook, providing a complete path from getting started to a working program that uses hardware features.
 
 * [Chapter 0](doc/00_introduction.md): Introduction. A brief intro to the subject and the ebook.
 * [Chapter 1](doc/01_setup.md): Setup. A short chapter dealing with preparing a Linux environment for further development.
@@ -16,6 +16,7 @@ This is still a work in progress. Currently available:
 * [Chapter 5](doc/05_cmake.md): Build & debug system. Here we show how the work can be streamlined by adding a CMake-based build system, and how the bare-metal program can be debugged.
 * [Chapter 6](doc/06_uart.md): UART driver development. In this chapter, a device driver for a UART gets written.
 * [Chapter 7](doc/07_interrupts.md): Interrupts. The chapter goes through setting up the ARM Generic Interrupt Controller, using it to receive and respond to interrupts. Also the UART driver gets adapted to use interrupts.
+* [Chapter 8 - WIP](doc/08_scheduling.md): Scheduling. Work in progress.
 
 ## Repository structure
 
