@@ -732,7 +732,7 @@ The first few seconds of the output even look correct. Task 0 starts right away 
 
 This is not at all surprising - we're still missing the key component of a preemptive scheduler, that is, the actual preemption and context switch.
 
-### Moving tasks to user mode
+### Handling supervisor exceptions
 
 Everything we have done so far runs in Supervisor mode, except for interrupt handlers which run in IRQ mode. Before we can peform context switching, we have to move the tasks to user mode. The bulk of the context switch action will require accessing registers of another mode. It would be possible to handle the entire switch from Supervisor mode, but it would be inelegant and also quite different from real-world application, so let's do things the right way instead.
 
@@ -906,13 +906,23 @@ When the C handler returns, we want to restore the program state from before the
 msr spsr_cxsf, r0
 ```
 
-With `SPSR` being a special register, we use the `MSR` instruction to write to it. Recall that `SPSR` and `CPSR` could be written partially - here the `cxsf` indicates that we want to write all parts of the register, fully restoring `SPSR` to how it was before `svc`.
+With `SPSR` being a special register, we use the `MSR` instruction to write to it. Recall that `SPSR` and `CPSR` could be written partially - here the `cxsf` indicates that we want to write all parts of the register, fully restoring `SPSR` to how it was before `svc`. Note that it's not acceptable to write directly to `CPSR` here - doing so would immediately switch back to the previous mode (like user mode), and would therefore lose us access to the other registers that are saved on the supervisor stack.
 
 ```
 ldmfd sp!, {r0-r12, pc}^
 ```
 
-Finally, it's time to continue in the previous mode, doing whatever follows the `svc` instruction. We restore registers `R0` to `R12` from the stack, and we also put the previously-saved value of `LR` into `PC` (compare to the `push {r0-r12, lr}` instruction earlier). This terminates the SVC handler, and the CPU will continue by executing whatever instruction `PC` now points to.
+Finally, it's time to continue in the previous mode, doing whatever follows the `svc` instruction. To do that, we restore registers `R0` to `R12` from the stack, and we also put the previously-saved value of `LR` into `PC` (compare to the `push {r0-r12, lr}` instruction earlier). It might seem like the registers could also be restored with a `POP` instruction for popping from the stack, like `pop {r0-r12, pc}`. It would indeed restore all of those registers, but would not restore `CPSR`. To return from an exception handler (like the top-level IRQ or SVC handlers), an ARMv7-A CPU needs to perform an instruction with a special flag that indicates the exception handling is over. 
+
+The `LDMFD` instruction is essentially equivalent to popping from the stack. `LDM` is the load-multiple instruction, and `FD` is a suffix indicating a full descending stack, that is, a stack that starts at a higher address and grows towards lower addresses. Our system uses a descending stack, as initially set up in Chapter 4. The key element in the above instruction, and the reason why we cannot use `POP`, is the `^` flag at the end - it indicates the end of exception handling code, meaning that `CPSR` will be restored from `SPSR` in the same instruction.
+
+---
+
+**NOTE**
+
+Despite the similarities of `svc` calls to supervisor and interrupts (both are considered exceptions in ARMv7), we had to do some extra work here that we didn't have to for IRQs. In the IRQ case, saving the previous state and then restoring it was handled for us by the compiler. That's essentially what `__attribute__((interrupt))` does, it tells the compiler to generate code for saving the previous state and restoring it after the function. We could handle supervisor calls similarly with a GCC attribute, but writing the assembly manually is a way to better understand the compiler-generated magic, and the concepts behind context switching.
+
+---
 
 That is quite a lot to take in, it might be good to test the SVC handler. The easiest way is to temporarily add some assembly before `bl main` and use `gdb` to check that things seem to be in order. We could add this test code before jumping to `main`:
 
@@ -923,12 +933,42 @@ That is quite a lot to take in, it might be good to test the SVC handler. The ea
     mov r11, #0xab
 test1:
     svc 0x42
+after_svc:
     nop
+    bl test2
+
+.func test2
+.thumb_func
+test2:
+    .thumb
+    svc 0xbb
+    nop
+    bx lr
+.endfunc
+.arm
 ```
 
-This time the assembly is straightforward, we just put some values into registers and do `svc 0x42`. The `test1` label is just for conveniently setting a breakpoint. You can then build and debug to see what happens (comment out `bl syscall_handler` first though since we haven't yet written the function). Running until `test1` and then checking registers with `i reg` in `gdb`, we can see the expected values in the four registers we wrote, and something like `0x60000110` in `CPSR` - the lowest 5 bits are `10000`, indicating User mode, just as expected. Then you can set a breakpoint in `SVC_Handler_Top` and step through it, observing that `0x42` ends up in `R0` at the right time, and that the registers are eventually restored. By the time we get to the `nop` after `svc 0x42`, registers should be at their previous values, and `CPSR` should again indicate that we're in User mode.
+This time most of the assembly is straightforward, we just put some values into registers and do `svc 0x42`. The `test1` label is just for conveniently setting a breakpoint. You can then build and debug to see what happens (comment out `bl syscall_handler` first though since we haven't yet written the function). Running until `test1` and then checking registers with `i reg` in `gdb`, we can see the expected values in the four registers we wrote, and something like `0x60000110` in `CPSR` - the lowest 5 bits are `10000`, indicating User mode, just as expected. Then you can set a breakpoint in `SVC_Handler_Top` and step through it, observing that `0x42` ends up in `R0` at the right time, and that the registers are eventually restored. By the time we get to the `nop` after `svc 0x42`, registers should be at their previous values, and `CPSR` should again indicate that we're in User mode.
+
+`test2` will request a different SVC function with `svc 0xbb`, but it will put the CPU into Thumb mode first. This lets us see that our SVC handler gets the SVC number correctly in both modes. The extra stuff around `test2` is there to be able to mix ARM and Thumb code in the same file, but those details are not very relevant to the subject at hand.
+
+---
+
+**NOTE**
+
+Using `gdb` directly to debug can be a bit daunting, as first noted when setting `gdbserver` up a few chapters ago. Especially if you're used to IDEs with integrated debuggers, raw GDB may feel hard to use. Search online either for tutorials on how to use GDB efficiently, especially with its TUI (Textual User Interface), or get one of the many graphical frontends available. There's nothing inferior about a frontend, in fact the built-in debugger in many IDEs is a frontend for GDB anyway.
+
+---
 
 
+### Moving tasks to user mode
+
+The entire previous section was preparation for moving tasks to supervisor mode. We've set up a stack for the user mode, and we're in user mode when we enter `main`, which prevents us from completing initialization. The supervisor handler routine we wrote included `bl syscall_handler`, a jump to a C handler, which now has to be written. It could be put in a file like `syscall.c`.
+
+```
+void syscall_handler(uint32_t syscall, unsigned uint32_t *regs) {
+}
+```
 
 ### Context switch
 

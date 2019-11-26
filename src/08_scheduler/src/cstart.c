@@ -27,8 +27,8 @@ int main() {
 	    uart_write("Failed to initialize CPU timer!\n");
 	}
 
-        (void)sched_add_task(&task1, 5000u);
-        (void)sched_add_task(&task2, 2000u);
+        (void)sched_add_task(&task0, 5000u);
+        (void)sched_add_task(&task1, 2000u);
 
         sched_run();
 

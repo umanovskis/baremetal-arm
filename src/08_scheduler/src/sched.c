@@ -3,7 +3,7 @@
 #include "sched.h"
 
 static task_desc task_table[MAX_NUM_TASKS] = {0};
-static uint_8 table_idx = 0;
+static uint8_t table_idx = 0;
 
 sched_error sched_add_task(task_entry_ptr entry, systime_t period) {
     if (table_idx >= MAX_NUM_TASKS) {
