@@ -103,11 +103,11 @@ void uart_write(const char* data) {
 void uart_write_uint(uint32_t num) {
     char buf[8];
     int8_t i = 0;
-    while (num != 0) {
+    do {
         uint8_t remainder = num % 10;
         buf[i++] = '0' + remainder;
         num /= 10;
-    }
+    } while (num != 0);
     for (i--; i >= 0; i--) {
         uart_putchar(buf[i]);
     }
