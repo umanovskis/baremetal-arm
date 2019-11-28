@@ -192,6 +192,8 @@ You should see CMake print some hints that we provided, and then QEMU will wait 
 arm-none-eabi-gdb -x gdbscript
 ```
 
+If you're using a Linux distribution from 2018 or later (Ubuntu 18.04 or Debian 10 for example), there might be no `arm-none-eabi-gdb`. In that case, run `gdb-multiarch` instead (after installing with `sudo apt-get install gdb-multiarch` if needed).
+
 Now you have GDB running and displaying `(gdb)`, its command prompt. You can set a breakpoint using the `break` command, let's try to set one in the `main` function, and then continue execution with `c` (short for `continue`):
 
 ```
