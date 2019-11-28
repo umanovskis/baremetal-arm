@@ -503,3 +503,334 @@ It will also be necessary to keep track of which task is currently running. We c
 ```
 static task_desc* current_task;
 ```
+
+Now we can write a new `sched_run` function that will set up the needed callbacks and start the scheduling loop. We can begin with something like the following.
+
+```
+void sched_run(void) {
+    for (uint8_t i = 0; i < MAX_NUM_TASKS; i++) {
+       task_desc* task = &task_table[i];
+       if (task->entry == NULL) {
+            continue;
+       }
+       systime_t next_run = task->last_run + task->period;
+       systime_schedule_event(next_run, task->period, task_switch_callback, &task->id);
+    }
+    current_task = &task_table[0]; // Simplification: always start the first task added
+    while(1) {
+    }
+}
+```
+
+The `for`-loop in the beginning goes through all the tasks and sets up a callback with the right period for each. So if Task 0 wants to run every 5000 ticks (recall that we wrote `sched_add_task(&task0, 5000u);` for the cooperative scheduler), there will now be a callback every 5000 ticks. Note the last two arguments to `systime_schedule_event`, which mean that `task_switch_callback` will be the callback function, and it will be called with `&task->id` as the argument.
+
+We also make the simplifying assumption that the first task added should begin running. In a real application, we would instead want some kind of flag in the task descriptor to specify whether a task should autostart.
+
+Just to see if everything works so far, we can have the actual callback write out some information and update the current task pointer.
+
+```
+static int task_switch_callback(void* arg) {
+    uint8_t new_task_id = *((uint8_t*)arg);
+    if (new_task_id == current_task->id) {
+        return 0;
+    }
+    uart_write("Switching context! Time ");
+    uart_write_uint(systime_get());
+    uart_write("; ");
+    uart_write_uint(current_task->id);
+    uart_write(" --> ");
+    uart_write_uint(new_task_id);
+    uart_write("\n");
+    current_task = &(task_table[new_task_id]);
+
+    return 0;
+}
+```
+
+At this point, it should be possible to build the software and run. Note that no changes in `main()` are needed, the same calls to `sched_add_task` and `sched_run` from before are sufficient.
+
+Running the software should give output like below:
+
+```
+Welcome to Chapter 8, Scheduling!
+Switching context! Time 2000; 0 --> 1
+Switching context! Time 5000; 1 --> 0
+Switching context! Time 6000; 0 --> 1
+Switching context! Time 10000; 1 --> 0
+Switching context! Time 10000; 0 --> 1
+Switching context! Time 15000; 1 --> 0
+Switching context! Time 16000; 0 --> 1
+Switching context! Time 20000; 1 --> 0
+Switching context! Time 20000; 0 --> 1
+Switching context! Time 25000; 1 --> 0
+Switching context! Time 26000; 0 --> 1
+Switching context! Time 30000; 1 --> 0
+Switching context! Time 30000; 0 --> 1
+Switching context! Time 35000; 1 --> 0
+Switching context! Time 36000; 0 --> 1
+Switching context! Time 40000; 1 --> 0
+```
+
+The good news here is that systime-based callbacks work. We're not running any tasks at all yet, but the `0 --> 1` and `1 --> 0` transitions indicate that the general flow seems correct. A request to change the current task comes in at the appropriate time, and the `current_task` pointer is updated accordingly.
+
+The bad news, aside from us not actually running any tasks, is that one obvious issue with the scheduling policy is already visible. When both tasks want to run at the same time, like at systick `10000` or `20000`, we get two switch requests, wasting the one that comes first. This can be remedied by processing one callback at most for every systick. Let's add a `break` after a callback is called in `check_callbacks`:
+
+```
+/* Callback entry */
+callback_table[slot].cb(callback_table[slot].arg);
+break;
+```
+
+This will avoid simultaneous callbacks, but will create pretty useless 1-tick periods when a task runs, like this:
+
+```
+Switching context! Time 2000; 0 --> 1
+Switching context! Time 5000; 1 --> 0
+Switching context! Time 6000; 0 --> 1
+Switching context! Time 10000; 1 --> 0
+Switching context! Time 10001; 0 --> 1
+Switching context! Time 15000; 1 --> 0
+Switching context! Time 16001; 0 --> 1
+```
+
+We can tolerate the silly 1-tick periods for now, as they don't affect the next steps we're about to take.
+
+### Getting tasks to run
+
+Of course since we never call `entry()` on a task from the task table, we're not actually running any tasks. It's quite straightforward to add this call just after changing the `current_task` pointer in `task_switch_callback`, like this:
+
+```
+current_task = &(task_table[new_task_id]);
+current_task->entry(); /* New line to actually enter the task */
+```
+
+Let's build and run this.
+
+```
+Welcome to Chapter 8, Scheduling!
+Switching context! Time 2000; 0 --> 1
+Entering task 1... systime 2000
+```
+
+It does run the first task we want to switch to, and promptly hangs. No more interrupts or callbacks seem to work.
+
+What's going on here?
+
+The answer will also be relevant later when we perform a context switch. Our problem is that we're still in the CPU's IRQ mode, and never finished dealing with the original timer interrupt that caused the systime to tick up. The best illustration is a call stack from the debugger - set a breakpoint in task1 and, when it triggets, display the call stack with the `bt` command (`bt` stands for backtrace). It will be similar to the following cleaned-up output:
+
+```
+#0  task1 () in tasks.c:15
+#1  0x600006ce in task_switch_callback (arg=<optimized out>) at sched_preemptive.c:42
+#2  0x600005ba in check_callbacks () at systime.c:41
+#3  0x60000614 in systime_tick () at systime.c:22
+#4  0x600004d4 in ptimer_isr () at ptimer.c:56
+#5  0x6000042c in irq_handler () at irq.c:13
+```
+
+We've entered `task1` without ever returning from `irq_handler`. Indeed, we get a hardware interrupt from the timer peripheral, it's handled by our timer driver in `ptimer_isr`, which in turn triggered the system tick and the callback. Let's look again at the code in `irq_handler`:
+
+```
+void __attribute__((interrupt)) irq_handler(void) {
+    uint16_t irq = gic_acknowledge_interrupt();
+    isr_ptr isr = callback(irq);
+    if (isr != NULL) {
+        isr();
+    }
+    gic_end_interrupt(irq);
+}
+```
+
+In this case, the `isr()` call is a call to `ptimer_isr()`, and since we haven't returned from there, we never call `gic_end_interrupt` to tell the GIC that we're done processing this interrupt. No more interrupts (at the same priority) will arrive. This doesn't just break scheduling, it also breaks `task1` itself if it expects some interrupts.
+
+We need to finish interrupt processing and leave IRQ mode before we enter the task. Let's remove the `entry()` call from the callback, and let the scheduler's main loop enter the task. Change the empty `while (1)` loop in `sched_run` to instead be:
+
+```
+while(1) {
+    if (current_task) {
+        current_task->entry();
+        current_task = NULL;
+    }
+}
+```
+
+Now, the callback function is responsible for updating the `current_task` pointer, but the task is actually entered from `sched_run`. If the task completes before another task wants to run, our system should just idle - so we reset the `current_task` pointer to `NULL`. We can now adjust the callback function a little bit to account for this idling possibility (see comments below), and then build and run again.
+
+```
+static int task_switch_callback(void* arg) {
+    uint8_t new_task_id = *((uint8_t*)arg);
+    /* Next line changed to check for idle pointer */
+    if (current_task && (new_task_id == current_task->id)) {
+        return 0;
+    }
+    uart_write("Switching context! Time ");
+    uart_write_uint(systime_get());
+    uart_write("; ");
+    /* Check if we're idle */
+    if (current_task) {
+        uart_write_uint(current_task->id);
+    } else {
+        uart_write("(idle)");
+    }
+    uart_write(" --> ");
+    uart_write_uint(new_task_id);
+    uart_write("\n");
+    current_task = &(task_table[new_task_id]);
+
+    return 0;
+}
+```
+
+The output will be much better now, such as:
+
+```
+Welcome to Chapter 8, Scheduling!
+Entering task 0... systime 0
+Exiting task 0...
+Switching context! Time 2000; (idle) --> 1
+Entering task 1... systime 2000
+Exiting task 1...
+Switching context! Time 4000; (idle) --> 1
+Entering task 1... systime 4000
+Switching context! Time 5000; 1 --> 0
+Exiting task 1...
+Switching context! Time 6000; (idle) --> 1
+Entering task 1... systime 6000
+Exiting task 1...
+Switching context! Time 8000; (idle) --> 1
+Entering task 1... systime 8000
+Exiting task 1...
+Switching context! Time 10000; (idle) --> 0
+Entering task 0... systime 10000
+Switching context! Time 10001; 0 --> 1
+Exiting task 0...
+Switching context! Time 12001; (idle) --> 1
+Entering task 1... systime 12001
+Exiting task 1...
+Switching context! Time 14001; (idle) --> 1
+Entering task 1... systime 14001
+Switching context! Time 15000; 1 --> 0
+Exiting task 1...
+Switching context! Time 16001; (idle) --> 1
+Entering task 1... systime 16001
+Exiting task 1...
+Switching context! Time 18001; (idle) --> 1
+Entering task 1... systime 18001
+Exiting task 1...
+Switching context! Time 20000; (idle) --> 0
+Entering task 0... systime 20000
+Switching context! Time 20001; 0 --> 1
+Exiting task 0...
+```
+
+Here it's useful to recall that both tasks are programmed to remain active for 1000 ticks with this loop:
+
+```
+while (start + 1000u > systime_get());
+```
+
+The first few seconds of the output even look correct. Task 0 starts right away and completes, then at systime 2000 the system is in an idle state before starting task 1. It again completes, and task 1 starts again at systime 4000. That's where things start going wrong. At systime 5000, we want to run task 0, but that doesn't happen. Next time we try to run task 0, at systime 10000, it starts, and subsequently blocks task 1 from running at systime 10001.
+
+This is not at all surprising - we're still missing the key component of a preemptive scheduler, that is, the actual preemption and context switch.
+
+### Moving tasks to user mode
+
+Everything we have done so far runs in Supervisor mode, except for interrupt handlers which run in IRQ mode. Before we can peform context switching, we have to move the tasks to user mode. The bulk of the context switch action will require accessing registers of another mode. It would be possible to handle the entire switch from Supervisor mode, but it would be inelegant and also quite different from real-world application, so let's do things the right way instead.
+
+The first step is to go back to our startup code in `startup.s` and the linker script in `linkscript.ld` to also set up a stack for user mode. Our user mode stack should be set up last - we cannot easily go back to supervisor mode once that's done! So in `startup.s`, before we enter C code with `bl main`, we will insert the following:
+
+```
+    /* User mode stack */
+    msr cpsr_c, MODE_USR
+    ldr r1, =_usr_stack_start
+    ldr sp, =_usr_stack_end
+
+usr_loop:
+    cmp r1, sp
+    strlt r0, [r1], #4
+    blt usr_loop
+```
+
+The stack boundaries should be defined in `linkscript.ld` similarly to other stacks.
+
+This seemingly small change does, in fact, change a lot. When we enter C code in `main`, the CPU will now be in user mode. It will therefore not be allowed to perform some of the critical operations we need early on, such as setting up the interrupt handling. We need to go back to supervisor mode for that. One could assume that it's a matter of just doing `msr cpsr_c, #0x13` again, but user mode code isn't allowed to change CPU status directly like that.
+
+Switching to supervisor mode in ARMv7 is done using the `svc` instruction. The instruction also specifies a function number that identifies the supervisor function that should run. In a way, this is similar to how interrupts work - IRQ mode is entered, there's a top-level IRQ handler which then calls a specific ISR. To do something useful in supervisor mode, a top-level supervisor handler should call the appropriate handler for a specific function, so that e.g. `svc 5` and `svc 1` would do different things.
+
+Just like when enabling interrupts, we have to modify the vector table in `startup.s`. The `svc` instruction is a software interrupt (`swi` is the old name for this instruction), and it will jump to offset `0x8` in the vector table. So we place the instruction `b SVC_Handler_Top` at that offset.
+
+```
+_Reset:
+    b Reset_Handler
+    b Abort_Exception /* 0x4  Undefined Instruction */
+    b SVC_Handler_Top /* 0x8  Software Interrupt */
+    b Abort_Exception  /* 0xC  Prefetch Abort */
+    b Abort_Exception /* 0x10 Data Abort */
+    b . /* 0x14 Reserved */
+    b irq_handler /* 0x18 IRQ */
+    b . /* 0x1C FIQ */
+```
+
+The top-level SVC handler needs to be written in assembly, and it will also prepare us for writing the context switch code - there will be some similarities.
+
+```
+SVC_Handler_Top:
+    push {r0-r12, lr}
+    mrs r0, spsr
+    push {r0}
+
+    tst r0, #0x20 // Thumb mode?
+    ldrneh r0, [lr, #-2]
+    bicne r0, r0, #0xFF00
+    ldreq r0, [lr, #-4]
+    bic r0, r0, #0xFF000000
+
+    mov r5, r0
+    mov r1, sp
+    bl syscall_handler
+
+    pop {r0}
+    msr spsr_cxsf, r0
+    pop {r0-r12, pc}
+```
+
+As usual for assembly, the code looks rather scary at first. Let's go through it line by line.
+
+```
+push {r0-r12, lr}
+```
+
+This saves the previous values of registers to the stack. We have to do this in the beginning - we just received a supervisor call, probably from user mode, and need to save whatever was in the registers - when we're done processing the supervisor call, we want to go back exactly to where we were. We're saving all the general purpose registers, R0 to R12, and the the link register LR. We're *not* saving the stack pointer and program counter (SP and PC) because supervisor mode has its own versions of those registers - there's no need to restore SP, and we'll overwrite PC later anyway. The value in LR that we save here points to the address to which we should return after handling the supervisor call.
+
+```
+mrs r0, spsr
+```
+
+We also need to save the program status register. It's normally called CPSR as you may remember, but right now CPSR is already different, saying we're in supervisor mode. When the CPU responds to an exception, such as the `svc` instruction, it automatically saves the CPSR value into SPSR (the first S stands for *saved*). So when we read SPSR, it has the same value that CPSR had just before the switch to supervisor mode. With the above instruction, we copy it to R0. Since SPSR isn't a regular register, we have to use the `mrs` instruction for reading it, just as we had to use `msr` in chapter 4 for writing to it.
+
+```
+push {r0}
+```
+
+### Context switch
+
+A preemptive scheduler has to preempt the running task when it's time to hand control to another task. If we're running Task 0 and need to switch to Task 1, then Task 0 should be forcefully suspended, its state (context) saved, and only then should Task 1 get control. When it's time to run Task 0 again, it should resume from its saved context instead of restarting from the beginning. All of that has to be done in a manner that is transparent to the tasks themselves. From a task's own perspective, everything should be the same whether it got preempted and resumed or not. 
+
+This means we have several important questions to answer in order to implement a context switch.
+
+* What exactly is the context of a task that we need to save?
+
+* Where to save the context?
+
+* How to restore a saved context?
+
+* How to actually hand control back to a task after restoring its context?
+
+A task's context is the values in CPU registers. These include the general-purpose registers, the all-import PC (R15) register that holds the address of the next instruction to execute, the SP register (R13) that points to the stack, and the CPSR (program status) register. The stack pointer is particularly noteworthy here because changing the SP will be what finalizes the context switch.
+
+Let's take a look at the system-level view of ARMv7-A registers.
+
+![08-sysregs.png](system registers)
+
+Our tasks run in supervisor mode (although user mode should be used there), and we want to perform context switching from IRQ mode. The link register LR holds the preferred return address from the current function or interrupt. As you can see, each mode has its own LR, so in IRQ mode we have LR_irq. It will normally point to where the CPU should continue from after the interrupt is handled. So if a timer interrupt arrived while we're somewhere in Task 0, LR_irq will point to somewhere in Task 0. This gives us a hint that we'll need to change the LR in order to give control to another task.
+
+So we can save a task's context by saving all of its registers. We could do that by first defining a struct to
