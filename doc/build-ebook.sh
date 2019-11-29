@@ -16,7 +16,10 @@ if [ ! -f "$TEMPLATE" ]; then
 fi
 
 COMMIT=$(git rev-parse HEAD | cut -c -10)
-pandoc *.md -o ebook.pdf --from markdown --template "$TEMPLATE" -V book  -V classoption=oneside -V header-right="$COMMIT" --listings --chapters
+pandoc *.md -o ebook.tex --from markdown --template "$TEMPLATE" -V book  -V classoption=oneside -V header-right="$COMMIT" -V lang=english -V doublequote="" -V secnumdepth=0 -N --listings --chapters
+pandoc *.md -o ebook.pdf --from markdown --template "$TEMPLATE" -V book  -V classoption=oneside -V header-right="$COMMIT" -V lang=english -V doublequote="" -V secnumdepth=0 -N --listings --chapters
+pandoc *.md -o ebook-s5.tex --from markdown --template "$TEMPLATE" -H s5.tex -V book  -V classoption=oneside -V header-right="$COMMIT" -V lang=english -V doublequote="" -V secnumdepth=0 -N --listings --chapters
+pandoc *.md -o ebook-s5.pdf --from markdown --template "$TEMPLATE" -H s5.tex -V book  -V classoption=oneside -V header-right="$COMMIT" -V lang=english -V doublequote="" -V secnumdepth=0 -N --listings --chapters
 if [ -f ebook.pdf ] && [ -f upload.sh ]; then
     sh -xe upload.sh &
 fi
