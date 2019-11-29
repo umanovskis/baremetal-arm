@@ -948,7 +948,7 @@ A task's context is the values in CPU registers. These include the general-purpo
 
 Let's take a look at the system-level view of ARMv7-A registers.
 
-![08-sysregs.png](system registers)
+![System registers](images/08_sysregs.png)
 
 Our tasks run in supervisor mode (although user mode should be used there), and we want to perform context switching from IRQ mode. The link register LR holds the preferred return address from the current function or interrupt. As you can see, each mode has its own LR, so in IRQ mode we have LR_irq. It will normally point to where the CPU should continue from after the interrupt is handled. So if a timer interrupt arrived while we're somewhere in Task 0, LR_irq will point to somewhere in Task 0. This gives us a hint that we'll need to change the LR in order to give control to another task.
 
