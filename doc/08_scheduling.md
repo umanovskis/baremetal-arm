@@ -1,4 +1,4 @@
-# Scheduling
+# Simple scheduling
 
 **This chapter is a work in progress. If you are reading the PDF version, keep in mind the chapter isn't complete.**
 
@@ -156,7 +156,7 @@ A real-time system requires a scheduler that can guarantee adherence to the requ
 
 *Cooperative schedulers* provide *cooperative (or non-preemptive) multitasking*. In this case, every task is allowed to run until it returns control to the scheduler, at which point the scheduler can start another task. Cooperative scedulers are easy to implement, but their major downside is relying on each task to make reasonable use of CPU resources. A poorly-written task can cause the entire system to slow down or even hang entirely. Implementing individual tasks is also simpler in the cooperative case - the task can assume that it will not be interrupted, and will instead run from start to finish.
 
-Cooperative scheduling is fairly common in low-resource embedded systems, and the implementation only requires that some kind of system-wide time exists.
+Cooperative scheduling is fairly common in low-resource embedded systems, and the implementation only requires that some kind of system-wide time exists. One example of a suitable system could be a thermostat. It can have several tasks (measure room temperature, calculate necessary output, read user settings, log some data) running with the same periods indefinitely.
 
 *Preemptive schedulers* use interrupts to *preempt*, or suspend, a task and hand control over to another task. This ensures that one task is not able to hang the entire system, or just take too long before letting other tasks run. Such schedulers implement some kind of algorithm for choosing when to interrupt a task and what task to execute next, and implementing actual preemption is another challenge.
 
@@ -328,10 +328,6 @@ Exiting task 1...
 
 What does that tell us? Well, the scheduler seems to be working fine. Task 0 first gets executed at systime `5000`, which is enough time for task 1 to run twice, starting at times `2000` and `4000`. We can also see that this is very much not a real-time system, as the schedule we've provided serves as a suggestion for the scheduler but isn't strictly enforced. At systime `10000`, it's time for both tasks to be executed (task 0 for the 2nd time and task 1 for the 5th time), but task 0 gets the execution slot (due to having its entry earlier in the task table), and task 1 gets delayed until systime `11000`, when task 0 finishes.
 
-Life is good when you have a working scheduler, and indeed this kind of simple scheduler is pretty similar to what some embedded systems run in the real world. There are small improvements that can be made to the scheduler without fundamentally changing it, such as allowing each task to have a priority, so that the highest-priority task would be chosen at times when multiple tasks wish to run, such as at systime `10000` above. Note the low memory overhead of this scheduler. It uses 1 byte for the `table_idx` variable and creates a 12-byte task descriptor for each task. This kind of memory use is one of the reasons why such simple cooperative schedulers are a valid choice for resource-constrained embedded systems.
-
-It is also easy to introduce some problems that a cooperative scheduler won't be able to manage well. For example, create a third task that just runs a `while (1);` loop. The scheduler will run the task and the system will hang with no hope of recovery. In a real system, a watchdog would probably be configured and reset everything, but a reset loop is not much better than a plain hang.
-
 In the scheduler's `sched_run` loop, you may have noticed a comment about an overflow bug on one line. After saying how spacecraft can get lost due to overflows, it wouldn't feel right to omit an example.
 
 ```
@@ -355,6 +351,18 @@ if (20 - (UINT32_MAX - 10) >= 100)
 the left side will evaluate to `31`, and the `if` will evaluate to false.
 
 Mathematically speaking, unsigned integers in C implement arithmetics modulo the type's maximum value plus one. So a `uint8_t`, holding the maximum value `255`, performs all operations modulo `256`. Importantly, only unsigned integers have overflow behavior that is guaranteed by the C standard. Signed integer overflow is undefined behavior, and you should avoid writing code that relies on signed integer overflows.
+
+Life is good when you have a working scheduler, and indeed this kind of simple scheduler is pretty similar to what some embedded systems run in the real world. There are small improvements that can be made to the scheduler without fundamentally changing it, such as allowing each task to have a priority, so that the highest-priority task would be chosen at times when multiple tasks wish to run, such as at systime `10000` above. Note the low memory overhead of this scheduler. It uses 1 byte for the `table_idx` variable and creates a 12-byte task descriptor for each task. This kind of memory use is one of the reasons why such simple cooperative schedulers are a valid choice for resource-constrained embedded systems.
+
+It is also easy to introduce some problems that a cooperative scheduler won't be able to manage well. For example, create a third task that just runs a `while (1);` loop. The scheduler will run the task and the system will hang with no hope of recovery. In a real system, a watchdog would probably be configured and reset everything, but a reset loop is not much better than a plain hang.
+
+## Summary
+
+In this chapter, we've looked at the simplest way of making a bare-metal system perform some useful work on a schedule. Doing this required a small new driver, and we built an abstract system time on top of it. From there, it was just a few more steps to have a working scheduler that runs predefined tasks on a predefined schedule.
+
+A real-world cooperative scheduler would be slightly more complex, but not by much. For all its simplicity, a cooperative scheduler is appropriate in simple embedded systems that don't have to quickly react to external input, and have well-known tasks that don't interfere with one another and aren't expected to run for long. At the same time, the scheduler is anything but robust - a single error in a task can cause it to hang permanently.
+
+We also saw how overflow errors are easy to introduce, and happen to often be associated with timing code.
 
 ## Preemptive scheduler
 
