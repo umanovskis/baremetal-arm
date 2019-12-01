@@ -30,6 +30,10 @@ int main() {
         (void)sched_add_task(&task0, 5000u);
         (void)sched_add_task(&task1, 2000u);
 
+        // Task 2 will hang a cooperative scheduler
+        // Uncomment below to see how it fails
+        //(void)sched_add_task(&task2, 9000u);
+
         sched_run();
 
         return 0;
