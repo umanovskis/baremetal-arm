@@ -61,6 +61,17 @@ stack_loop:
     ldr r1, =_data_start
     ldr r2, =_data_end
 
+    /* User mode stack */
+    msr cpsr_c, MODE_SYS
+    ldr r1, =_usr_stack_start
+    ldr sp, =_usr_stack_end
+
+usr_loop:
+    cmp r1, sp
+    strlt r0, [r1], #4
+    blt usr_loop
+    msr cpsr_c, MODE_SVC
+
 data_loop:
     cmp r1, r2
     ldrlt r3, [r0], #4
@@ -80,22 +91,11 @@ bss_loop:
     /* Disable supervisor mode interrupts */
     cpsid if
 
-    /* User mode stack */
-    msr cpsr_c, MODE_SYS
-    ldr r1, =_usr_stack_start
-    ldr sp, =_usr_stack_end
-
-usr_loop:
-    cmp r1, sp
-    strlt r0, [r1], #4
-    blt usr_loop
-bb:
-    msr cpsr_c, MODE_SYS
-
 /* Test code starts below - see the section on
- moving tasks to user mode in chapter 8 for an
+ moving tasks to user mode in chapter 9 for an
  explanation. */
 
+    msr cpsr_c, MODE_SYS
     mov r0, #0xa0
     mov r1, #0xa1
     mov r10, #0xaa

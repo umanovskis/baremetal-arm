@@ -25,7 +25,7 @@ int main() {
         };
         uart_configure(&config);
 
-        uart_write("Welcome to Chapter 8, Scheduling!\n");
+        uart_write("Welcome to Chapter 9, Context Switch!\n");
 	gic_init();
 	gic_enable_interrupt(UART0_INTERRUPT);
 	gic_enable_interrupt(PTIMER_INTERRUPT);
