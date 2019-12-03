@@ -376,7 +376,7 @@ The first few seconds of the output even look correct. Task 0 starts right away 
 
 This is not at all surprising - we're still missing the key component of a preemptive scheduler, that is, the actual preemption and context switch.
 
-## Moving tasks to user mode
+## Moving tasks out of supervisor mode
 
 Everything we have done so far runs in Supervisor mode, except for interrupt handlers which run in IRQ mode. Before we can peform context switching, we have to move the tasks to user mode. It would be possible to handle context switching with everything running in Supervisor mode, but it would be inelegant and also quite different from real-world application, so let's do things the right way instead.
 
@@ -443,15 +443,19 @@ We're basically doing the same thing here as in startup code to switch modes, ex
 
 To get to our goal, we will need to find a way of running user mode tasks but also being able to switch back to supervisor mode code.
 
-Switching to supervisor mode in ARMv7 is done using the `svc` instruction. The instruction also specifies a function number that identifies the supervisor function that should run. In a way, this is similar to how interrupts work - IRQ mode is entered, there's a top-level IRQ handler which then calls a specific ISR. To do something useful in supervisor mode, a top-level supervisor handler should call the appropriate handler for a specific function, so that e.g. `svc 5` and `svc 1` would do different things.
+## Supervisor exception handler
 
-Just like when enabling interrupts, we have to modify the vector table in `startup.s`. The `svc` instruction is a software interrupt (`swi` is the old name for this instruction), and it will jump to offset `0x8` in the vector table. So we place the instruction `b SVC_Handler_Top` at that offset.
+When we were setting up interrupts, we learned that ARMv7 has several types of *CPU exceptions*, one of which is used for IRQ handling. Switching from user mode to supervisor mode can be accomplished using another exception of ARMv7, the *Supervisor Call exception*. The `SVC` assembly instruction triggers this exception, and it was called `SWI` (for Software Interrupt) in earlier versions of the ARM architecture, so if you see `SWI` in any examples, know that it's exactly the same as `SVC`. Supervisor calls with `SVC` also include some function number that identifies the desired supervisor function, so `svc 5` and `svc 1` are (or can be) calls to different functions.
+
+This will be the method we use to return to supervisor-mode scheduler code from user-mode tasks. The idea is to switch to user mode, run the task, and then use the SVC exception to transition back into supervisor mode.
+
+To implement software support for supervisor mode, we need to begin with a top-level handler, which means filling the appropriate entry in the vector table. The SBC handler is at offset `0x8` in the vector table, so we place a jump to the new handler there. Our vector table is now:
 
 ```
 _Reset:
     b Reset_Handler
     b Abort_Exception /* 0x4  Undefined Instruction */
-    b SVC_Handler_Top /* 0x8  Software Interrupt */
+    b SVC_Handler_Top /* 0x8  Supervisor Call */
     b Abort_Exception  /* 0xC  Prefetch Abort */
     b Abort_Exception /* 0x10 Data Abort */
     b . /* 0x14 Reserved */
@@ -481,7 +485,7 @@ SVC_Handler_Top:
     ldmfd sp!, {r0-r12, pc}^
 ```
 
-As usual for assembly, the code looks rather scary at first. To summarize it, the first block will save the previous CPU state, the next block will identify the specific supervisor function that was called, then the C handler will be called, and the final block will restore the previous state.
+As usual for assembly, the code looks rather scary at first. To summarize it, the first block will save the previous CPU state, the next block will identify the specific supervisor function that was called, then the C handler will be called, and the final block will restore the preceding state.
 
 Let's go through it line by line.
 
@@ -489,7 +493,7 @@ Let's go through it line by line.
 push {r0-r12, lr}
 ```
 
-This saves the previous values of registers to the stack. We have to do this in the beginning - we just received a supervisor call, probably from user mode, and need to save whatever was in the registers - when we're done processing the supervisor call, we want to go back exactly to where we were. We're saving all the general purpose registers, `R0` to `R12`, and the the link register LR. We're *not* saving the stack pointer and program counter (SP and PC) because supervisor mode has its own versions of those registers - there's no need to restore SP, and we'll overwrite PC later anyway. The value in LR that we save here points to the address to which we should return after handling the supervisor call.
+This saves the previous values of registers to the stack. We have to do this in the beginning - we just received a supervisor call, probably from user mode, and need to save whatever was in the registers - when we're done processing the supervisor call, we want to go back exactly to where we were. We're saving all the general purpose registers, `R0` to `R12`, and the the link register `LR`. We're *not* saving the stack pointer and program counter (SP and PC) because supervisor mode has its own version of `SP`, and we'll overwrite `PC` later. The value in `LR` that we save here points to the address to which we should return after handling the supervisor call.
 
 ```
 mov r1, sp
@@ -501,7 +505,7 @@ After the previous `push`, SP now points to where we saved those registers. We s
 mrs r0, spsr
 ```
 
-We also need to save the program status register. It's normally called CPSR as you may remember, but right now CPSR is already different, saying we're in supervisor mode. When the CPU responds to an exception, such as the `svc` instruction, it automatically saves the CPSR value into SPSR (the first S stands for *saved*). So when we read SPSR, it has the same value that CPSR had just before the switch to supervisor mode. With the above instruction, we copy it to `R0`. Since SPSR isn't a regular register, we have to use the `mrs` instruction for reading it, just as we had to use `msr` in chapter 4 for writing to it. This instruction, then, reads SPSR and writes the value to `R0`.
+We also need to save the program status register. It's normally called `CPSR`, but `CPSR` has already changed and it says we're in supervisor mode. When the CPU responds to an exception, such as after executing the `svc` instruction, it automatically saves the CPSR value into SPSR (the first S stands for *saved*). So the SPSR that we see now, in supervisor mode, has the same value that CPSR had just before the switch to supervisor mode. Since SPSR isn't a regular register, we have to use the `mrs` instruction for reading it, just as we had to use `msr` in chapter 4 for writing to it. This instruction, then, reads SPSR and writes the value to `R0`.
 
 ```
 push {r0}
@@ -545,7 +549,7 @@ This instruction determines the CPU's instruction mode. `R0` still holds the `SP
 
 ![CPSR bit layout](images/08_cpsr.png)
 
-Bit number 5, also denoted as the `T` bit is `1` in Thumb mode and `0` in ARM mode. The `TST` instruction performs a bitwise AND on the specified register and operand. `0x20` is the bit mask for bit 5, so we're testing if bit 5 is set. Just like many other comparison instructions in assembly, `TST` updates result flags (also located in `CPSR`) instead of writing the result to some register. It could feel a bit counter-intuitive but the `TST` instruction will set the `Z` flag to `1` if bit 5 was *not* set. If the CPU is in Thumb mode, `R0 AND 0x20` will equal `0x20`, which is non-zero, so the `Z` flag will be set to `0`.
+Bit number 5, also denoted as the `T` bit, is `1` in Thumb mode and `0` in ARM mode. The `TST` instruction performs a bitwise AND on the specified register and operand. `0x20` is the bit mask for bit 5, so we're testing if bit 5 is set. Just like many other comparison instructions in assembly, `TST` updates result flags (also located in `CPSR`) instead of writing the result to some register. It could feel a bit counter-intuitive but the `TST` instruction will set the `Z` flag to `1` if bit 5 was *not* set. If the CPU is in Thumb mode, `R0 AND 0x20` will equal `0x20`, which is non-zero, so the `Z` flag will be set to `0`.
 
 ```
 ldrneh r0, [lr, #-2]
@@ -616,6 +620,7 @@ Despite the similarities of `svc` calls to supervisor and interrupts (both are c
 That is quite a lot to take in, it might be good to test the SVC handler. The easiest way is to temporarily add some assembly before `bl main` and use `gdb` to check that things seem to be in order. We could add this test code before jumping to `main`:
 
 ```
+    msr cpsr_c, MODE_SYS
     mov r0, #0xa0
     mov r1, #0xa1
     mov r10, #0xaa
@@ -625,6 +630,7 @@ test1:
 after_svc:
     nop
     bl test2
+    msr cpsr_c, MODE_SVC
 
 .func test2
 .thumb_func
@@ -637,7 +643,7 @@ test2:
 .arm
 ```
 
-This time most of the assembly is straightforward, we just put some values into registers and do `svc 0x42`. The `test1` label is just for conveniently setting a breakpoint. You can then build and debug to see what happens (comment out `bl syscall_handler` first though since we haven't yet written the function). Running until `test1` and then checking registers with `i reg` in `gdb`, we can see the expected values in the four registers we wrote, and something like `0x60000110` in `CPSR` - the lowest 5 bits are `10000`, indicating User mode, just as expected. Then you can set a breakpoint in `SVC_Handler_Top` and step through it, observing that `0x42` ends up in `R0` at the right time, and that the registers are eventually restored. By the time we get to the `nop` after `svc 0x42`, registers should be at their previous values, and `CPSR` should again indicate that we're in User mode.
+This time most of the assembly is straightforward, we just switch to system mode, put some values into registers and do `svc 0x42`. The `test1` label is only there for conveniently setting a breakpoint. You can then build and debug to see what happens (comment out `bl syscall_handler` first though since we haven't yet written the function). Running until `test1` and then checking registers with `i reg` in GDB, we can see the expected values in the four registers we wrote, and something like `0x6000011F` in `CPSR` - the lowest 5 bits are `11111` or `0x1F`, indicating System mode, just as expected. Then you can set a breakpoint in `SVC_Handler_Top` and step through it, observing that `0x42` ends up in `R0` at the right time, and that the registers are eventually restored. By the time we get to the `nop` after `svc 0x42`, registers should be at their previous values, and `CPSR` should again indicate that we're in System mode.
 
 `test2` will request a different SVC function with `svc 0xbb`, but it will put the CPU into Thumb mode first. This lets us see that our SVC handler gets the SVC number correctly in both modes. The extra stuff around `test2` is there to be able to mix ARM and Thumb code in the same file, but those details are not very relevant to the subject at hand.
 
@@ -646,6 +652,36 @@ This time most of the assembly is straightforward, we just put some values into 
 **NOTE**
 
 Using `gdb` directly to debug can be a bit daunting, as first noted when setting `gdbserver` up a few chapters ago. Especially if you're used to IDEs with integrated debuggers, raw GDB may feel hard to use. Search online either for tutorials on how to use GDB efficiently, especially with its TUI (Textual User Interface), or get one of the many graphical frontends available. There's nothing inferior about a frontend, in fact the built-in debugger in many IDEs is a frontend for GDB anyway.
+
+---
+
+## Syscall handler
+
+Now that our system can enter and exit supervisor mode when requested, we have to write the `syscall_handler` function that will be called from the assembly SVC handler. Its signature would be:
+
+```
+void syscall_handler(uint32_t syscall, uint32_t *regs)
+```
+
+A *calling convention* specifies an agreed-upon way of implementing function calls at the low level, and is part of the *application-binary interface* (ABI). The ARM calling convention states that function arguments are passed in registers `R0` to `R3`. A calling convention is exactly that, a convention, there is no mechanism within the CPU that enforces adherence. It's up to developers, primarily compiler and OS developers, to ensure the calling convention is respected. We can be sure that the GCC cross-compiler respects this calling convention (by the way, the `eabi` in `gcc-arm-none-eabi` stands for Embedded Application Binary Interface).
+
+In the assembly code, we saved the desired SVC function number in `R0`, and we also let `R1` point at the previously-saved registers on the stack. In our `syscall_handler`, `R0` and `R1` thus become arguments to the function. Now that we're back in C, we can comfortably do whatever we want to handle various SVC functions. These functions are usually referred to as *system calls*, or *syscalls* for short, and the term isn't specific to ARM or embedded development - it's a general name for calls to important privileged functions that unprivileged code requests.
+
+It's important to note that the specific SVC function numbers have no architectural meaning. ARM doesn't define any such thing as "SVC function 5" or "syscall 2". It's entirely up to the software to assign and implement the functions necessary for that software. We can keep syscalls that we support in an `enum`. Let's define a syscall that a user mode task can call when it terminates to hand control back to the scheduler.
+
+```
+enum syscalls {
+    SYSCALL_ENDTASK = 0
+};
+```
+
+---
+
+**Is this an operating system?**
+
+With the implementation of system calls and, soon enough, context switching, one could wonder whether our system has transitioned from a simple bare-metal system to being an operating system. Indeed, managing tasks and providing various syscalls are key parts of an OS kernel. It's also typical for an OS kernel to be the part that starts first and runs in privileged mode.
+
+The definition of an operating system is surprisingly vague. It could be argued that, after finishing this chapter, we will have a minimalistic embedded operating system. Or you could say that the system still lacks some major OS features, such as memory management, and doesn't provide enough useful abstraction to its tasks to qualify as an operating system. It's up to you how to think of this system.
 
 ---
 

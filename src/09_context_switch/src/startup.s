@@ -92,7 +92,7 @@ bss_loop:
     cpsid if
 
 /* Test code starts below - see the section on
- moving tasks to user mode in chapter 9 for an
+ the supervisor call handler in chapter 9 for an
  explanation. */
 
     msr cpsr_c, MODE_SYS
@@ -105,6 +105,7 @@ test1:
 after_svc:
     nop
     bl test2
+    msr cpsr_c, MODE_SVC
 
 .func test2
 .thumb_func
@@ -118,7 +119,6 @@ test2:
 
 /* Test code ends here */
 
-    msr cpsr_c, MODE_SVC
     bl main
     b Abort_Exception
 

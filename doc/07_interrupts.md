@@ -16,7 +16,7 @@ No, not even close. Inerrupt handling is often quite complicated, and there's wo
 
 Interrupt handling is very hardware-dependent. We need to look into the general interrupt handling procedure of the particular architecture, and then into specifics of a particular implementation like a specific CPU. The ARMv7-A manual provides quite a lot of useful information about interrupt handling on that architecture.
 
-ARMv7-A uses the generic term *exception* to refer, in general terms, to interrupts and some other exception types like CPU errors. An interrupt is called an *IRQ exception* in ARMv7-A, so that's the term the manual names a lot.When an ARMv7-A CPU takes an exception, it transfers control to an instruction located at the appropriate location in the vector table, depending on the exception type. The very first code we wrote for startup began with the vector table.
+ARMv7-A uses the generic term *exception* to refer, in general terms, to interrupts, supervisor requests and some other CPU errors. An interrupt is called an *IRQ exception* in ARMv7-A, so that's the term the manual names a lot.When an ARMv7-A CPU takes an exception, it transfers control to an instruction located at the appropriate location in the vector table, depending on the exception type. The very first code we wrote for startup began with the vector table.
 
 As a reminder:
 
