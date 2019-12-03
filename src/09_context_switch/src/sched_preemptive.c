@@ -57,11 +57,12 @@ static int task_switch_callback(void* arg) {
 }
 
 static void activate_task(task_entry_ptr fn) {
-    asm("mov r4, 0x1F");
-    asm("msr cpsr_c, r4");
+    uint32_t val;
+    asm("mov %0, 0x1F" : "=r"(val));
+    asm("msr cpsr_c, %0" : : "r"(val));
     fn();
-    asm("mov r4, 0x13");
-    asm("msr cpsr_c, r4");
+    asm("mov %0, 0x13" : "=r"(val));
+    asm("msr cpsr_c, %0" : : "r"(val));
 }
 
 void sched_run(void) {

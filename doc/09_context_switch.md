@@ -382,6 +382,8 @@ Everything we have done so far runs in Supervisor mode, except for interrupt han
 
 Our goal is to have the system-critical code, including the scheduler itself, running in supervisor mode, and to have the various tasks run in user mode. These modes aren't just different names for doing the same thing, they have different privilege levels. User mode code is the only *unprivileged* mode in ARMv7-A, running at what ARM calls the `PL0` privilege level. There are instructions and areas of memory that unprivileged code cannot access. For example, enabling or disabling interrupts, like what we did in Chapter 7, is only possible from privileged code. Such a concept of privilege levels is used to prevent the majority of the code that runs on a system from making the whole system unusable. This is why some program you're running on your PC cannot easily do something like disable the keyboard for the whole system.
 
+Such separation isn't a remotely new approach. The x86 architecture has had so-called protected mode, with different privilege levels, since the Intel 80286, and became widely adopted as of Windows 3.0 running on Intel's 80386 CPUs.
+
 The first step to start running in user mode is to go back to our startup code in `startup.s` and the linker script in `linkscript.ld` to also set up a stack for user mode, like we previously did for other modes. We define stack boundaries in `linkscript.ld` similarly to other stacks, for example to place it after the IRQ stack:
 
 ```
@@ -423,6 +425,23 @@ static void activate_task(task_entry_ptr fn) {
 ```
 
 This turns out not to be viable either. Recall that each mode has its own `LR` register, which indicates where to return to after the function completes. With the above code, we enter `activate_task` from `sched_run` in supervisor mode. So `LR_svc` points into `sched_run`, then we switch into user mode and run the task's entry point in `fn()`, correctly return to `activate_task` because `LR_usr` will point back there while `fn()` runs, but then we're still in user mode and cannot return to `sched_run` - we're no longer aware of it since user mode doesn't see `LR_svc`, it sees `LR_usr`. And just like in `startup.s`, we cannot directly enter supervisor mode either because user mode isn't allowed to write to `CPSR`.
+
+For now, we can cheat a bit and use system mode again just to see that switching modes like this works. Then `activate_task` would be implemented as below. The `"=r"(val)` syntax is part of GCC extended assembly, we're letting GCC pick the specific register where to store `val` instead of specifying one ourselves - although we could have used any register except `R0`, which should contain the `fn` argument, that is, the entry point function.
+
+```
+static void activate_task(task_entry_ptr fn) {
+    uint32_t val;
+    asm("mov %0, 0x1F" : "=r"(val)); // 0x1F is system mode
+    asm("msr cpsr_c, %0" : : "r"(val));
+    fn();
+    asm("mov %0, 0x13" : "=r"(val)); //0x13 is supervisor mode
+    asm("msr cpsr_c, %0" : : "r"(val));
+}
+```
+
+We're basically doing the same thing here as in startup code to switch modes, except with inline assembly in a C function. This will indeed work to make sure tasks run in a different mode until they return, while the main scheduler code continues running in supervisor mode. You can verify that by setting a breakpoint in `task0` and checking the `CPSR` register there. While a valid proof of concept, this doesn't get us to our goal of running tasks in user mode, nor does it offer much theoretical benefit. System mode is privileged just like supervisor mode, so the extra safety net of preventing tasks from certain operations just isn't there.
+
+To get to our goal, we will need to find a way of running user mode tasks but also being able to switch back to supervisor mode code.
 
 Switching to supervisor mode in ARMv7 is done using the `svc` instruction. The instruction also specifies a function number that identifies the supervisor function that should run. In a way, this is similar to how interrupts work - IRQ mode is entered, there's a top-level IRQ handler which then calls a specific ISR. To do something useful in supervisor mode, a top-level supervisor handler should call the appropriate handler for a specific function, so that e.g. `svc 5` and `svc 1` would do different things.
 
