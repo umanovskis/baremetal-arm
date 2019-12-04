@@ -417,23 +417,23 @@ activate_task(current_task->entry);
 and the first idea to write that function could be
 
 ```
-static void activate_task(task_entry_ptr fn) {
+static void activate_task(task_entry_ptr entry) {
     asm("mov r4, 0x10"); //User mode is 0x10
     asm("msr cpsr_c, r4");
-    fn();
+    entry();
 }
 ```
 
-This turns out not to be viable either. Recall that each mode has its own `LR` register, which indicates where to return to after the function completes. With the above code, we enter `activate_task` from `sched_run` in supervisor mode. So `LR_svc` points into `sched_run`, then we switch into user mode and run the task's entry point in `fn()`, correctly return to `activate_task` because `LR_usr` will point back there while `fn()` runs, but then we're still in user mode and cannot return to `sched_run` - we're no longer aware of it since user mode doesn't see `LR_svc`, it sees `LR_usr`. And just like in `startup.s`, we cannot directly enter supervisor mode either because user mode isn't allowed to write to `CPSR`.
+This turns out not to be viable either. Recall that each mode has its own `LR` register, which indicates where to return to after the function completes. With the above code, we enter `activate_task` from `sched_run` in supervisor mode. So `LR_svc` points into `sched_run`, then we switch into user mode and run the task's entry point in `entry()`, correctly return to `activate_task` because `LR_usr` will point back there while `entry()` runs, but then we're still in user mode and cannot return to `sched_run` - we're no longer aware of it since user mode doesn't see `LR_svc`, it sees `LR_usr`. And just like in `startup.s`, we cannot directly enter supervisor mode either because user mode isn't allowed to write to `CPSR`.
 
-For now, we can cheat a bit and use system mode again just to see that switching modes like this works. Then `activate_task` would be implemented as below. The `"=r"(val)` syntax is part of GCC extended assembly, we're letting GCC pick the specific register where to store `val` instead of specifying one ourselves - although we could have used any register except `R0`, which should contain the `fn` argument, that is, the entry point function.
+For now, we can cheat a bit and use system mode again just to see that switching modes like this works. Then `activate_task` would be implemented as below. The `"=r"(val)` syntax is part of GCC extended assembly, we're letting GCC pick the specific register where to store `val` instead of specifying one ourselves - although we could have used any register except `R0`, which should contain the `entry` argument, that is, the entry point function.
 
 ```
-static void activate_task(task_entry_ptr fn) {
+static void activate_task(task_entry_ptr entry) {
     uint32_t val;
     asm("mov %0, 0x1F" : "=r"(val)); // 0x1F is system mode
     asm("msr cpsr_c, %0" : : "r"(val));
-    fn();
+    entry();
     asm("mov %0, 0x13" : "=r"(val)); //0x13 is supervisor mode
     asm("msr cpsr_c, %0" : : "r"(val));
 }
@@ -655,7 +655,7 @@ Using `gdb` directly to debug can be a bit daunting, as first noted when setting
 
 ---
 
-## Syscall handler
+## End-of-task syscall handler
 
 Now that our system can enter and exit supervisor mode when requested, we have to write the `syscall_handler` function that will be called from the assembly SVC handler. Its signature would be:
 
@@ -684,6 +684,10 @@ With the implementation of system calls and, soon enough, context switching, one
 The definition of an operating system is surprisingly vague. It could be argued that, after finishing this chapter, we will have a minimalistic embedded operating system. Or you could say that the system still lacks some major OS features, such as memory management, and doesn't provide enough useful abstraction to its tasks to qualify as an operating system. It's up to you how to think of this system.
 
 ---
+
+What will our handler actually do, then, to let the scheduler resume as it should? The scheduler will need to restore the state that it had before executing the task, and that means the state has to be saved somewhere first. The scheduler's `activate_task` function should first save the state, which we can accomplish with some inline assembly. Before writing the end-of-task syscall handler, we may as well deal with saving the state first - it will give us a better idea of how to restore it.
+
+Let's consider what we need to save when we are in `activate_task`
 
 ### Context switch
 

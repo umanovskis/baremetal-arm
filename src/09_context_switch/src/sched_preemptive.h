@@ -48,3 +48,5 @@ typedef enum {
 
 sched_error sched_add_task(task_entry_ptr entry, systime_t period);
 void sched_run(void);
+
+void sched_end_task(uint32_t);
