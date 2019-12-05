@@ -516,11 +516,11 @@ Here we save `R0`, which now contains the value of SPSR, to the stack. The entir
 After this block of code, the supervisor mode stack looks like this:
 
 ```
-+-------------+   SP
-|    SPSR     | <-----+
++-------------+   R1 and SP
+|    SPSR     | <-----------+
 |             |
-+-------------+   R1
-|    old R0   | <-----+
++-------------+   
+|    old R0   | 
 |             |
 +-------------+
 |    old R1   |
@@ -665,6 +665,10 @@ void syscall_handler(uint32_t syscall, uint32_t *regs)
 
 A *calling convention* specifies an agreed-upon way of implementing function calls at the low level, and is part of the *application-binary interface* (ABI). The ARM calling convention states that function arguments are passed in registers `R0` to `R3`. A calling convention is exactly that, a convention, there is no mechanism within the CPU that enforces adherence. It's up to developers, primarily compiler and OS developers, to ensure the calling convention is respected. We can be sure that the GCC cross-compiler respects this calling convention (by the way, the `eabi` in `gcc-arm-none-eabi` stands for Embedded Application Binary Interface).
 
+Here's the summary of how the core registers are supposed to be used, taken from the ARM calling convention:
+
+![Core register calling convention](images/09_calling_regs.png)
+
 In the assembly code, we saved the desired SVC function number in `R0`, and we also let `R1` point at the previously-saved registers on the stack. In our `syscall_handler`, `R0` and `R1` thus become arguments to the function. Now that we're back in C, we can comfortably do whatever we want to handle various SVC functions. These functions are usually referred to as *system calls*, or *syscalls* for short, and the term isn't specific to ARM or embedded development - it's a general name for calls to important privileged functions that unprivileged code requests.
 
 It's important to note that the specific SVC function numbers have no architectural meaning. ARM doesn't define any such thing as "SVC function 5" or "syscall 2". It's entirely up to the software to assign and implement the functions necessary for that software. We can keep syscalls that we support in an `enum`. Let's define a syscall that a user mode task can call when it terminates to hand control back to the scheduler.
@@ -687,7 +691,135 @@ The definition of an operating system is surprisingly vague. It could be argued 
 
 What will our handler actually do, then, to let the scheduler resume as it should? The scheduler will need to restore the state that it had before executing the task, and that means the state has to be saved somewhere first. The scheduler's `activate_task` function should first save the state, which we can accomplish with some inline assembly. Before writing the end-of-task syscall handler, we may as well deal with saving the state first - it will give us a better idea of how to restore it.
 
-Let's consider what we need to save when we are in `activate_task`
+Let's consider what we need to save when we are in `activate_task` and before we trigger the transition to user mode. Do we really need everything?
+
+* General-purpose registers. `R0` contains the `entry` argument, that is, the address of the task's entry point. It's used only to enter the task, we don't need to restore it after the task completes, therefore we don't need to save it either. We don't need the other general-purpose registers either, as the ARM calling convention can tell us. `activate_task` has no more arguments, and doesn't have any local variables we could lose. `activate_task` was called from `sched_run`, and the state of `sched_run` was already saved on the stack when calling `activate_task` - it's just a regular C function call, and then the compiler takes care of saving the caller's state. So, there's no need to save the general-purpose registers.
+
+* The program state register `CPSR`. It may seem like we don't need to save it because the user mode task doesn't have the rights to change anything in `CPSR` that we need to keep. That's true, but `CPSR` also contains the `I` and `F` bits, which indicate whether interrupts (IRQs and FIQs respectively) are enabled. We will want to save this information so that we can restore the previous interrupt state. Now, our tutorial system always keeps interrupts on after enabling them for the first time, but we will want to keep track of interrupt state properly nonetheless. It's very common for real systems to briefly disable interrupts to run some critical code.
+
+* The link register, `LR`. When we enter `activate_task`, `LR` will point to where the CPU should continue after `activate_task` returns, which is inside the loop in `sched_run`. We indeed want to continue there, so `LR` should be saved.
+
+Simply saving `LR` and `CPSR` seems to be sufficient. Both registers can be saved on the stack. Very importantly, we will also need to save `SP` itself after doing so. When we push `LR` and `CPSR` to the stack, supervisor mode `SP` will point to them. But after the user task terminates and executes a Supervisor Call, the CPU will first switch to the assembly SVC handler, and then to `syscall_handler`. The latter call is itself a function call (written as `bl syscall_handler` in assembly), which means it will affect the stack, so supervisor mode `SP` will have changed by the time we want to restore the task's context.
+
+To provide a memory location to save `SP` to, we can simply allocate a static variable in the scheduler:
+
+```
+static uint32_t saved_sp;
+```
+
+Armed with the above information, we can make an attempt to rewrite the first part of `activate_task`.
+
+```
+static void activate_task(task_entry_ptr entry) {
+    asm("mrs r1, cpsr \n\t"
+        "push {r1, lr} \n\t"
+        "mov %0, sp \n\t"
+        "bic r1, r1, 0x3 \n\t"
+        "msr cpsr_c, r1"
+        : "=r"(saved_sp)
+        );
+
+    entry();
+}
+```
+
+First a couple of technical notes on the extended assembly syntax - when we want multiple assembly statements, they should be written in one `asm(...)` block. Using a separate `asm` block for each instruction allows GCC to treat the statements as independent, so they could be reordered for optimization, which would break the functionality. Also, when splitting a multi-statement `asm` block into multiple lines like above, including `\n` to indicate newlines is mandatory.
+
+In one of the instructions there, we use the `%0` placeholder instead of a specific register. We've done this before, and in the case of this multi-statement block the meaning is the same. GCC will choose what register to use there, and it will respect the output operator list after the `:` sign, which in our case is `"=r"(saved_sp)`. The list means that the first placeholder in the assembly block (so `%0`, which is also the only placeholder) is a write operation on the variable `saved_sp`.
+
+Onto the code now.
+
+```
+mrs r1, cpsr
+```
+
+We move the current `CPSR` value into `R1`. Recall that `R0` contains the `entry` argument and shouldn't be overwritten.
+
+```
+push {r1, lr}
+```
+
+We save `R1` and `LR` on the stack.
+
+```
+mov %0, sp
+```
+
+Now that `SP` points to the two registers saved before, we save the `SP` in another register, and that value in `saved_sp`.
+
+```
+bic r1, r1, 0x3
+```
+
+Here we clear the lowest two bits, or mask `0x3` of `R1`, but the intention could be a bit non-obvious. What we really want is to switch to user mode. Writing `0x10` to the C section of `CPSR`, that is, `cpsr_c`, would work, but the C section includes more than the mode, it also includes the interrupt mask bits `I` and `F` (you can refer to the image with `CPSR` breakdown earlier in this chapter). If we write `0x10` to the lowest 8 bits, we'll be setting the interrupt mask bits to `0`. It would work in our particular case (as noted, those bits are `0` for sure anyway when we're at this point), but in general it's a great way to introduce a bug that's difficult to discover. Accidentally changing the interrupt bits from `1` to `0` before running a task would mean the task runs with interrupts enabled, which could manifest in all sorts of strange behavior if the task expects interrupts to be off.
+
+`R1` holds the current `CPSR` value due to the previous `mrs`. In supervisor mode, the lowest 5 bits are `0x13`, in user mode they are `0x10`. So clearing the `0x3` mask gives us a value we can use for `CPSR` to enter user mode without changing anything else in `CPSR`.
+
+```
+msr cpsr, r1
+```
+
+We place the value we previously built into `CPSR`. This is the last instruction that will execute in supervisor mode - the call to `entry()` on the next line will be executed in user mode, ensuring that the entire task remains in user mode.
+
+It's very good that we can switch to user mode like this, but we've only done half of the job. Thus far the situation isn't much different from when we directly wrote `0x10` to `CPSR_c` - we still don't have the code to resume the scheduler properly after the task terminates. All the building blocks are now in place though, and we can implement the rest of enf-of-task handling.
+
+When `entry()` returns, execution will jump back to `activate_task`, still in user mode. At that point we need to jump back into supervisor mode, and restore the previously-saved state. Let's continue building `activate_task`.
+
+```
+/* ... previous code ... */
+entry();
+asm("svc 0");
+asm("nop");
+```
+
+We will perform a Supervisor Call, the only way to get back to supervisor mode from user mode. Let the arbitrarily chosen function number `0` indicate end of task. The subsequent `nop` is there just to illustrate a point - what mode will the CPU be in when it's executed? You might think it's supervisor mode, but no, it will be back in user mode. When the CPU is done handling the supervisor call exception, it will return to the previous state, using the assembly code we ourselves wrote in the SVC handler. Specifically, the sequence here will be:
+
+1. `entry()` returns, we're in user mode.
+
+2. The `svc 0` instruction is executed in user mode. This triggers a supervisor call exception, the CPU jumps to supervisor mode and starts executing `SVC_Handler_Top`, the assembly handler we wrote.
+
+3. The assembly handler calls `syscall_handler`. CPU is still in supervisor mode, and `syscall_handler` returns after completing.
+
+4. Control goes back to `SVC_Handler_Top`, which finally concludes with the `ldmfd sp!, {r0-r12, pc}^` instruction. It signifies end of exception handling, and the CPU returns to its pre-exception `CPSR`, which says user mode.
+
+5. `PC` now points at the `nop`, which executes.
+
+We need to stay in supervisor mode after `svc 0` though. In general it's useful to have system calls that do something and then return to the previous mode, but not for the end-of-task call. We need to change the above sequence, and that's something we can do in the specific handler for our syscall.
+
+Right after `svc 0` is executed, as part of the CPU's exception entry procedure, the address of the next instruction is entered into `LR`. So in the example above, the address of the `nop` would be in `LR` as soon as `SVC_Handler_Top` starts. If we can continue execution from `LR` and skip restoration of the pre-exception state, we'll remain in supervisor mode. Before calling `syscall_handler` from assembly, we made sure that `R1` points to the registers that assembly code saved in its first line, `push {r0-r12, lr}`. `LR` is among them. That leads to the following system call handler:
+
+```
+void syscall_handler(uint32_t syscall, uint32_t *regs) {
+    switch (syscall) {
+    
+    case SYSCALL_ENDTASK: ;
+        uint32_t next_instr = regs[LR_REG_OFFSET]; //LR_REG_OFFSET is 14
+        asm("mov pc, %0" : : "r"(next_instr));
+        break;
+    }
+}
+```
+
+Since `regs` is the argument in `R1`, we can just access it as an array to get registers saved on the stack. Note that `LR_REG_OFFSET` above is `14`. The first push was for `{r0-r12, lr}`, but then we also added `SPSR` on top of the stack, so `LR` is at offset `14` and not `13`.
+
+The handler for `SYSCALL_ENDTASK` (syscall `0`) thus retrieves the stored value of `LR` and then moves it into `PC`, which immediately performs a jump to that address. The last part of `SVC_Handler_Top` is therefore skipped, and execution continues from the instruction that followed `svc 0`, still in supervisor mode. Let's now continue writing the end-of-task code:
+
+```
+/* ... previous code ... */
+entry();
+asm("svc 0 \n\t"
+"mov sp, %0 \n\t"
+"pop {r0, lr} \n\t"
+"msr cpsr, r0"
+: : "r"(saved_sp));
+```
+
+After the syscall, the code loads the previous state, pretty much performing the same steps as for saving it but in reverse. `SP` is restored from the `saved_sp` variable, and then the two saved registers are popped from the stack. Popping `LR` means the code will resume at the right place when this function returns, and finally the previously-saved `CPSR` value is written back into `CPSR`.
+
+Once again, an important note on interrupts. We remain in supervisor mode after `svc 0`, so it may not seem necessary to restore `CPSR`. Indeed, it's not needed for restoring the mode, but is needed to restore the interrupt mask state, the `I` and `F` bits. In fact, when a CPU takes an exception to supervisor mode, IRQs get automatically disabled (the `I` bit gets set to `1`). A debugger would let you see how the `CPSR` value changes during the end-task code. Here's a summary from the ARMv7-A architecture manual on what happens to the interrupt mask upon exception entry:
+
+![I and F bit state after exception](images/09_intmask_exception.png)
+
 
 ### Context switch
 

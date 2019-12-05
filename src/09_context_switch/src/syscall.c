@@ -11,7 +11,7 @@ void syscall_handler(uint32_t syscall, uint32_t *regs) {
     
     case SYSCALL_ENDTASK: ;
         uint32_t next_instr = regs[LR_REG_OFFSET];
-        sched_end_task(next_instr);
+        asm("mov pc, %0" : : "r"(next_instr));
         break;
     }
 }

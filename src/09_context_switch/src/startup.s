@@ -143,7 +143,7 @@ SVC_Handler_Top:
     biceq r0, r0, #0xFF000000
 
     mov r1, sp
-    //bl swc_handler
+    bl syscall_handler
     pop {r0} // load spsr from stack
     msr spsr_cxsf, r0
     ldmfd sp!, {r0-r12, pc}^

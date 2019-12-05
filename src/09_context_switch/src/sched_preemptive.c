@@ -76,18 +76,18 @@ static void activate_task(task_entry_ptr entry) {
     asm("mrs r1, cpsr \n\t"
         "push {r1, lr} \n\t"
         "mov %0, sp \n\t"
-        "mov r1, 0x10 \n\t"
-        "msr cpsr_c, r1"
+//        "mov r1, 0x10 \n\t"
+        "bic r1, r1, 0x3 \n\t"
+        "msr cpsr, r1"
         : "=r"(saved_sp)
         );
 
     entry();
-    asm("svc 0");
-    asm("nop");
-    asm("pop {r0, lr}");
-    asm("msr cpsr, r0");
-    //asm("mov %0, 0x13" : "=r"(val));
-    //asm("msr cpsr_c, %0" : : "r"(val));
+    asm("svc 0 \n\t"
+    "mov sp, %0 \n\t"
+    "pop {r0, lr} \n\t"
+    "msr cpsr, r0"
+    : : "r"(saved_sp));
 }
 
 void sched_end_task(uint32_t next) {
