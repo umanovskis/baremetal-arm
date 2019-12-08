@@ -9,9 +9,11 @@ enum syscalls {
 void syscall_handler(uint32_t syscall, uint32_t *regs) {
     switch (syscall) {
     
-    case SYSCALL_ENDTASK: ;
-        uint32_t next_instr = regs[LR_REG_OFFSET];
-        asm("mov pc, %0" : : "r"(next_instr));
+    case SYSCALL_ENDTASK:
+        asm ("mov r3, 60 \n\t"
+        "add sp, r3 \n\t"
+        "ldr r3, [r1, #56] \n\t" //LR is regs[14]
+        "mov pc, r3");
         break;
     }
 }

@@ -59,35 +59,21 @@ static int task_switch_callback(void* arg) {
 static uint32_t saved_regs[12];
 static uint32_t saved_sp;
 
-static void activate_task(task_entry_ptr entry) {
+static void run_task(task_entry_ptr entry) {
     uint32_t mode;
     uint32_t* regs = saved_regs;
     uint32_t cpsr;
-    //asm("push {r1-r7, lr}");
-    //asm("mov %0, sp"  : "=r"(saved_sp));
-    //asm("push {lr}");
-
-    //asm("mrs %0, cpsr" : "=r"(cpsr));
-    //asm("push {%0, lr}" : : "r"(cpsr));
-    //asm("mov %0, sp"  : "=r"(saved_sp));
-    //asm("mov %0, 0x10" : "=r"(mode));
-    //asm("msr cpsr_c, %0" : : "r"(mode));
 
     asm("mrs r1, cpsr \n\t"
         "push {r1, lr} \n\t"
-        "mov %0, sp \n\t"
-//        "mov r1, 0x10 \n\t"
         "bic r1, r1, 0x3 \n\t"
         "msr cpsr, r1"
-        : "=r"(saved_sp)
         );
 
     entry();
     asm("svc 0 \n\t"
-    "mov sp, %0 \n\t"
     "pop {r0, lr} \n\t"
-    "msr cpsr, r0"
-    : : "r"(saved_sp));
+    "msr cpsr, r0");
 }
 
 void sched_end_task(uint32_t next) {
@@ -111,7 +97,7 @@ void sched_run(void) {
     current_task = &task_table[0]; // Simplification: always start the first task added
     while(1) {
         if (current_task) {
-            activate_task(current_task->entry);
+            run_task(current_task->entry);
             current_task = NULL;
         }
     }
