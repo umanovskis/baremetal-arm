@@ -1,4 +1,4 @@
-# Preemption and context switching
+# Context switching and preemption
 
 **This chapter is a work in progress. If you are reading the PDF version, keep in mind the chapter isn't complete.**
 
@@ -408,28 +408,28 @@ usr_loop:
     msr cpsr_c, MODE_SVC
 ```
 
-With this, we'll have the user mode stack available when we need it, and we switch back to supervisor mode after setting it up so that we enter C code in supervisor mode, just like before. Now it's time to make sure the tasks run in user mode. Since they are started by the scheduler, we can modify how the scheduler calls them. Instead of just calling the task's entry point directly, we introduce an `activate_task` function there so that `sched_run` does
+With this, we'll have the user mode stack available when we need it, and we switch back to supervisor mode after setting it up so that we enter C code in supervisor mode, just like before. Now it's time to make sure the tasks run in user mode. Since they are started by the scheduler, we can modify how the scheduler calls them. Instead of just calling the task's entry point directly, we introduce an `run_task` function there so that `sched_run` does
 
 ```
-activate_task(current_task->entry);
+run_task(current_task->entry);
 ```
 
 and the first idea to write that function could be
 
 ```
-static void activate_task(task_entry_ptr entry) {
+static void run_task(task_entry_ptr entry) {
     asm("mov r4, 0x10"); //User mode is 0x10
     asm("msr cpsr_c, r4");
     entry();
 }
 ```
 
-This turns out not to be viable either. Recall that each mode has its own `LR` register, which indicates where to return to after the function completes. With the above code, we enter `activate_task` from `sched_run` in supervisor mode. So `LR_svc` points into `sched_run`, then we switch into user mode and run the task's entry point in `entry()`, correctly return to `activate_task` because `LR_usr` will point back there while `entry()` runs, but then we're still in user mode and cannot return to `sched_run` - we're no longer aware of it since user mode doesn't see `LR_svc`, it sees `LR_usr`. And just like in `startup.s`, we cannot directly enter supervisor mode either because user mode isn't allowed to write to `CPSR`.
+This turns out not to be viable either. Recall that each mode has its own `LR` register, which indicates where to return to after the function completes. With the above code, we enter `run_task` from `sched_run` in supervisor mode. So `LR_svc` points into `sched_run`, then we switch into user mode and run the task's entry point in `entry()`, correctly return to `run_task` because `LR_usr` will point back there while `entry()` runs, but then we're still in user mode and cannot return to `sched_run` - we're no longer aware of it since user mode doesn't see `LR_svc`, it sees `LR_usr`. And just like in `startup.s`, we cannot directly enter supervisor mode either because user mode isn't allowed to write to `CPSR`.
 
-For now, we can cheat a bit and use system mode again just to see that switching modes like this works. Then `activate_task` would be implemented as below. The `"=r"(val)` syntax is part of GCC extended assembly, we're letting GCC pick the specific register where to store `val` instead of specifying one ourselves - although we could have used any register except `R0`, which should contain the `entry` argument, that is, the entry point function.
+For now, we can cheat a bit and use system mode again just to see that switching modes like this works. Then `run_task` would be implemented as below. The `"=r"(val)` syntax is part of GCC extended assembly, we're letting GCC pick the specific register where to store `val` instead of specifying one ourselves - although we could have used any register except `R0`, which should contain the `entry` argument, that is, the entry point function.
 
 ```
-static void activate_task(task_entry_ptr entry) {
+static void run_task(task_entry_ptr entry) {
     uint32_t val;
     asm("mov %0, 0x1F" : "=r"(val)); // 0x1F is system mode
     asm("msr cpsr_c, %0" : : "r"(val));
@@ -689,17 +689,17 @@ The definition of an operating system is surprisingly vague. It could be argued 
 
 ---
 
-What will our handler actually do, then, to let the scheduler resume as it should? The scheduler will need to restore the state that it had before executing the task, and that means the state has to be saved somewhere first. The scheduler's `activate_task` function should first save the state, which we can accomplish with some inline assembly. Before writing the end-of-task syscall handler, we may as well deal with saving the state first - it will give us a better idea of how to restore it.
+What will our handler actually do, then, to let the scheduler resume as it should? The scheduler will need to restore the state that it had before executing the task, and that means the state has to be saved somewhere first. The scheduler's `run_task` function should first save the state, which we can accomplish with some inline assembly. Before writing the end-of-task syscall handler, we may as well deal with saving the state first - it will give us a better idea of how to restore it.
 
-Let's consider what we need to save when we are in `activate_task` and before we trigger the transition to user mode. Do we really need everything?
+Let's consider what we need to save when we are in `run_task` and before we trigger the transition to user mode. Do we really need everything?
 
-* General-purpose registers. `R0` contains the `entry` argument, that is, the address of the task's entry point. It's used only to enter the task, we don't need to restore it after the task completes, therefore we don't need to save it either. We don't need the other general-purpose registers either, as the ARM calling convention can tell us. `activate_task` has no more arguments, and doesn't have any local variables we could lose. `activate_task` was called from `sched_run`, and the state of `sched_run` was already saved on the stack when calling `activate_task` - it's just a regular C function call, and then the compiler takes care of saving the caller's state. So, there's no need to save the general-purpose registers.
+* General-purpose registers. `R0` contains the `entry` argument, that is, the address of the task's entry point. It's used only to enter the task, we don't need to restore it after the task completes, therefore we don't need to save it either. We don't need the other general-purpose registers either, as the ARM calling convention can tell us. `run_task` has no more arguments, and doesn't have any local variables we could lose. `run_task` was called from `sched_run`, and the state of `sched_run` was already saved on the stack when calling `run_task` - it's just a regular C function call, and then the compiler takes care of saving the caller's state. So, there's no need to save the general-purpose registers.
 
 * The program state register `CPSR`. It may seem like we don't need to save it because the user mode task doesn't have the rights to change anything in `CPSR` that we need to keep. That's true, but `CPSR` also contains the `I` and `F` bits, which indicate whether interrupts (IRQs and FIQs respectively) are enabled. We will want to save this information so that we can restore the previous interrupt state. Now, our tutorial system always keeps interrupts on after enabling them for the first time, but we will want to keep track of interrupt state properly nonetheless. It's very common for real systems to briefly disable interrupts to run some critical code.
 
-* The link register, `LR`. When we enter `activate_task`, `LR` will point to where the CPU should continue after `activate_task` returns, which is inside the loop in `sched_run`. We indeed want to continue there, so `LR` should be saved.
+* The link register, `LR`. When we enter `run_task`, `LR` will point to where the CPU should continue after `run_task` returns, which is inside the loop in `sched_run`. We indeed want to continue there, so `LR` should be saved.
 
-Simply saving `LR` and `CPSR` seems to be sufficient. Both registers can be saved on the stack. Very importantly, we will also need to save `SP` itself after doing so. When we push `LR` and `CPSR` to the stack, supervisor mode `SP` will point to them. But after the user task terminates and executes a Supervisor Call, the CPU will first switch to the assembly SVC handler, and then to `syscall_handler`. The latter call is itself a function call (written as `bl syscall_handler` in assembly), which means it will affect the stack, so supervisor mode `SP` will have changed by the time we want to restore the task's context.
+Simply saving `LR` and `CPSR` seems to be sufficient. Both registers can be saved on the stack. Very importantly, we need to think about `SP`. When we push `LR` and `CPSR` to the stack, supervisor mode `SP` will point to them. But after the user task terminates and executes a Supervisor Call, the CPU will first switch to the assembly SVC handler, which will modify `SP` further. We'll get into more detail on this a bit later on.
 
 To provide a memory location to save `SP` to, we can simply allocate a static variable in the scheduler:
 
@@ -707,16 +707,14 @@ To provide a memory location to save `SP` to, we can simply allocate a static va
 static uint32_t saved_sp;
 ```
 
-Armed with the above information, we can make an attempt to rewrite the first part of `activate_task`.
+Armed with the above information, we can make an attempt to rewrite the first part of `run_task`.
 
 ```
-static void activate_task(task_entry_ptr entry) {
+static void run_task(task_entry_ptr entry) {
     asm("mrs r1, cpsr \n\t"
         "push {r1, lr} \n\t"
-        "mov %0, sp \n\t"
         "bic r1, r1, 0x3 \n\t"
         "msr cpsr_c, r1"
-        : "=r"(saved_sp)
         );
 
     entry();
@@ -742,12 +740,6 @@ push {r1, lr}
 We save `R1` and `LR` on the stack.
 
 ```
-mov %0, sp
-```
-
-Now that `SP` points to the two registers saved before, we save the `SP` in another register, and that value in `saved_sp`.
-
-```
 bic r1, r1, 0x3
 ```
 
@@ -763,7 +755,7 @@ We place the value we previously built into `CPSR`. This is the last instruction
 
 It's very good that we can switch to user mode like this, but we've only done half of the job. Thus far the situation isn't much different from when we directly wrote `0x10` to `CPSR_c` - we still don't have the code to resume the scheduler properly after the task terminates. All the building blocks are now in place though, and we can implement the rest of enf-of-task handling.
 
-When `entry()` returns, execution will jump back to `activate_task`, still in user mode. At that point we need to jump back into supervisor mode, and restore the previously-saved state. Let's continue building `activate_task`.
+When `entry()` returns, execution will jump back to `run_task`, still in user mode. At that point we need to jump back into supervisor mode, and restore the previously-saved state. Let's continue building `run_task`.
 
 ```
 /* ... previous code ... */
@@ -786,21 +778,66 @@ We will perform a Supervisor Call, the only way to get back to supervisor mode f
 
 We need to stay in supervisor mode after `svc 0` though. In general it's useful to have system calls that do something and then return to the previous mode, but not for the end-of-task call. We need to change the above sequence, and that's something we can do in the specific handler for our syscall.
 
-Right after `svc 0` is executed, as part of the CPU's exception entry procedure, the address of the next instruction is entered into `LR`. So in the example above, the address of the `nop` would be in `LR` as soon as `SVC_Handler_Top` starts. If we can continue execution from `LR` and skip restoration of the pre-exception state, we'll remain in supervisor mode. Before calling `syscall_handler` from assembly, we made sure that `R1` points to the registers that assembly code saved in its first line, `push {r0-r12, lr}`. `LR` is among them. That leads to the following system call handler:
+Right after `svc 0` is executed, as part of the CPU's exception entry procedure, the address of the next instruction is entered into `LR`. So in the example above, the address of the `nop` would be in `LR` as soon as `SVC_Handler_Top` starts. If we can continue execution from `LR` and skip restoration of the pre-exception state, we'll remain in supervisor mode. Before calling `syscall_handler` from assembly, we made sure that `R1` points to the registers that assembly code saved in its first line, `push {r0-r12, lr}`. `LR` is among them. That leads to the following system call handler (we could mix C and assembly in the `asm` block, but system call handlers are often written in assembly, and in this case it's more educational to keep that part C-free).
 
 ```
 void syscall_handler(uint32_t syscall, uint32_t *regs) {
     switch (syscall) {
     
     case SYSCALL_ENDTASK: ;
-        uint32_t next_instr = regs[LR_REG_OFFSET]; //LR_REG_OFFSET is 14
-        asm("mov pc, %0" : : "r"(next_instr));
+        asm ("mov r3, 60 \n\t"
+        "add sp, r3 \n\t"
+        "ldr r3, [r1, #56] \n\t" //LR is regs[14]
+        "mov pc, r3");
         break;
     }
 }
 ```
 
-Since `regs` is the argument in `R1`, we can just access it as an array to get registers saved on the stack. Note that `LR_REG_OFFSET` above is `14`. The first push was for `{r0-r12, lr}`, but then we also added `SPSR` on top of the stack, so `LR` is at offset `14` and not `13`.
+The first thing we do is to add `60` to `SP` (using `R3` to store the value `60` as an intermediate step). We do this to prepare the rest of `run_task` for retrieving its stored state. When `run_task` saved two registers on the stack, the stack looked like:
+
+```
++-------------+   SP
+|      LR     | <-------+
+|             |
++-------------+
+|     CPSR    |
+|             |
++-------------+
+```
+
+By the time we're in `syscall_handler`, the stack pointer has changed and the situation is like this:
+
+```
++-------------+   SP
+|      ..     | <-------+
+|             |
++-------------+   old SP
+|      LR     | <-------+
+|             |
++-------------+
+|     CPSR    |
+|             |
++-------------+
+```
+
+Why has the stack pointer changed? It's due to `SVC_Handler_Top` once again, which pushed registers onto the stack. More precisely, the assembly code there pushed 15 registers to the stack (`R0` to `R12` makes 13, plus `LR`, plus `SPSR`). Each register is 32 bits or 4 bytes. Now we know that, in the time between `run_task` saving registers and us executing `syscall_handler`, another `15 * 4 = 60` have been pushed to the stack. Therefore we add `60` to `SP`, skipping these recent additions to the stack and getting `SP` to where it was. If you're unsure why we're adding to `SP` and not subtracting, recall that the stack grows towards lower addresses, that is, `SP` decreases as you push. If `SP` is `x` and you then push one register such as with `push {lr}`, `SP` becomes `SP - 4`.
+
+After restoring `SP`, we have this interesting line:
+
+```
+ldr r3, [r1, #56] //LR is regs[14]
+```
+
+The instruction will retrieve the user-mode `LR` value which was saved onto the stack in `SVC_Handler_Top` - the `LR` value that points to after `svc 0`. Before jumping to `syscall_handler`, the assembly code made sure that `R1` points to the saved registers. If we were writing C here, we could retrieve `LR` by writing `args[14]`. The `args` argument is the same as `R1`, and if we view it as an array of registers then `LR` is at offset `14` (`SPSR` is at offset `0`, `R0` is at offset `1` and so on).
+
+Since we're writing assembly instead, we're using the immediate-offset form of the `LDR` instruction. We say that we want to load the value from address in `R1 + 56 bytes` ino `R3`. It's important to pay attention here to the fact that `LDR` loads a word (4 bytes) but the offset specified is in bytes. To load a word at offset `14` in the array, equivalent to saying `regs[14]` in C, we have to use the offset `14 * 4 = 56`. For this instruction, we can reuse `R3`, as we no longer need the previous value in it.
+
+```
+mov pc, r3
+```
+
+We put the previously-retrieved value into `PC`.
 
 The handler for `SYSCALL_ENDTASK` (syscall `0`) thus retrieves the stored value of `LR` and then moves it into `PC`, which immediately performs a jump to that address. The last part of `SVC_Handler_Top` is therefore skipped, and execution continues from the instruction that followed `svc 0`, still in supervisor mode. Let's now continue writing the end-of-task code:
 
@@ -808,7 +845,6 @@ The handler for `SYSCALL_ENDTASK` (syscall `0`) thus retrieves the stored value 
 /* ... previous code ... */
 entry();
 asm("svc 0 \n\t"
-"mov sp, %0 \n\t"
 "pop {r0, lr} \n\t"
 "msr cpsr, r0"
 : : "r"(saved_sp));
@@ -820,8 +856,116 @@ Once again, an important note on interrupts. We remain in supervisor mode after 
 
 ![I and F bit state after exception](images/09_intmask_exception.png)
 
+### Worked example
 
-### Context switch
+The previous section is the most complicated thing we've done so far. There's context switching between the user and supervisor modes, implemented from scratch without relying on compiler attributes. On top of that, there is the mixing of assembly and C, and architecture-specific issues like keeping track of the interrupt mask bits. To better understand what's going on, let's follow an example through the major steps. For this example, we'll use some more convenient values than we would actually see when running.
+
+Our example begins just before execution reaches `run_task` for the first time. We're in supervisor mode, about to start a task for the first time. We arrive at `run_task` from `sched_run`. Let's suppose the instructions are at these addresses:
+
+```
+run_task(current_task->entry); // At 0x1000
+current_task = NULL;                // At 0x1002
+```
+
+We enter `run_task`. Let's suppose that the task's `entry` is at `0x1050`. Then the registers when we enter `run_task` will be: `R0 = 0x1050`, `LR = 0x1002`, `CPSR = 0x??????33`. The `entry` argument is in `R0`, `LR` points to the instruction after the `run_task` call, and the lowest byte of `CPSR` indicates Thumb instruction mode, interrupts enabled and supervisor mode. For the rest of the example, only the lowest bit of `CPSR` will be listed. Let's also say that `SP` at this time is `0x600` (arbitrarily chosen). Let's use the addresses below for instructions in `run_task`:
+
+```
+mrs r1, cpsr    // At 0x1010
+push {r1, lr}   // At 0x1012
+bic r1, r1, 0x3 // At 0x1014
+msr cpsr_c, r1  // At 0x1016
+entry();        // At 0x1018
+svc 0           // At 0x101A
+pop {r0, lr}    // At 0x101C
+msr cpsr, r0    // At 0x101E
+```
+
+
+First `run_task` pushes `CPSR` and `LR` onto the stack. The supervisor mode stack is now:
+
+```
++-------------+   SP = 0x5F8
+|     0x33    | <-----------+
+|             |
++-------------+  [0x5FC]
+|    0x1002   |
+|             |
++-------------+  [0x600]
+|     ....    |
++-------------+
+```
+
+Note that the stack grows towards lower addresses, so after pushing eight bytes, `SP` is now `0x600 - 8 = 0x5F8`.
+
+Then the lowest 3 bits of `CPSR` get cleared and now `CPSR = 0x30` (interrupts enabled, user mode). Next, `entry()` gets called. `LR` is immediately set to `0x101A`, the instruction after the `entry()` call.
+
+By the time `entry()` returns, we don't know anything for sure about most of the registers. All we know is that `entry()` will return and the next instruction will be `svc 0`, at `0x101A`, and that `CPSR` still ends in `0x30`. We don't know the state of registers `R0-R12`, so let's say they're `0xA0`, `0xA1`, `0xA2` and so on until `R12 = 0xAC`.
+
+Next comes the most interesting moment. `svc 0` is executed. `LR` is set to the following instruction in `run_task`, `0x101C`. `CPSR` immediately changed to `0xB3` (supervisor mode, and IRQs disabled - the `I` bit is set to `1`). IRQs were disabled automatically because of the supervisor call exception. Execution jumps to `SVC_Handler_Top`.
+
+The first thing the assembly SVC handler does is `push {r0-r12, lr}`. This pushes fourteen registers onto the stack. Then the handler pushes `SPSR`. Its value is what `CPSR` was before the supervisor call exception, that is, `0x30`. The stack is now like this:
+
+```
++-------------+   SP = 0x5BC
+|     0x30    | <-----------+
+|             |
++-------------+
+|     0xA0    | [0x5C0]
+|             |
++-------------+
+|     0xA1    |
+|             |
++-------------+
+|     ....    |
++-------------+
+|     0xAC    | [0x5F0]
+|             |
++-------------+
+|    0x101C   | [0x5F4]
+|             |
++-------------+
+|     0x33    | [0x5F8]
+|             |
++-------------+
+|    0x1002   |
+|             |
++-------------+
+```
+
+Another fifteen registers, for a total of 60 bytes, were pushed on top of our previous `SP`, which has therefore decreased by `60`. That is `0x3C` in hexadecimal, so `SP` is now `0x5F8 - 0x3C = 0x5BC`.
+
+`SVC_Handler_Top` extracts the supervisor function number, which is `0`, and places it into `R0`. It places the pointer to the saved registers - `0x5BC` - into `R1` before jumping into `syscall_handler`.
+
+Inside `syscall_handler`, first `SP` is increased by `60`. It is now again `0x5F8`, as it was just before calling `entry()`. Next `syscall_handler` performs `ldr r3, [r1, #56]`. That's a load from `R1` plus another `56` bytes, or `0x38` in hex, so `R1 (0x5BC) + 0x38 = 0x5F4`. The value there is `0x101C` and gets placed into `R3`. Finally, that value gets moved to `PC`, causing an immediate branch to the instruction at `0x101C`. That places us back into `run_task` again, here:
+
+```
+pop {r0, lr}    // At 0x101C
+msr cpsr, r0    // At 0x101E
+```
+
+The stack is the same as it was before calling `entry()`, that is
+
+```
++-------------+   SP = 0x5F8
+|     0x33    | <-----------+
+|             |
++-------------+  [0x5FC]
+|    0x1002   | <-----------+
+|             |
++-------------+  [0x600]
+|     ....    |
++-------------+
+```
+
+After `pop {r0, lr}`, `R0` becomes `0x33` and `LR` becomes `0x1002`. When `run_task` returns, execution jumps to the instruction at `0x1002`, which is in `sched_run`:
+
+```
+current_task = NULL;                // At 0x1002
+```
+
+That's it - the scheduler loop continues running, and the next time a task runs the above process will repeat.
+
+## Preemption
 
 A preemptive scheduler has to preempt the running task when it's time to hand control to another task. If we're running Task 0 and need to switch to Task 1, then Task 0 should be forcefully suspended, its state (context) saved, and only then should Task 1 get control. When it's time to run Task 0 again, it should resume from its saved context instead of restarting from the beginning. All of that has to be done in a manner that is transparent to the tasks themselves. From a task's own perspective, everything should be the same whether it got preempted and resumed or not. 
 
