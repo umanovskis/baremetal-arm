@@ -967,24 +967,34 @@ That's it - the scheduler loop continues running, and the next time a task runs 
 
 ## Preemption
 
-A preemptive scheduler has to preempt the running task when it's time to hand control to another task. If we're running Task 0 and need to switch to Task 1, then Task 0 should be forcefully suspended, its state (context) saved, and only then should Task 1 get control. When it's time to run Task 0 again, it should resume from its saved context instead of restarting from the beginning. All of that has to be done in a manner that is transparent to the tasks themselves. From a task's own perspective, everything should be the same whether it got preempted and resumed or not. 
+After doing quite a lot of work, we have tasks running in user mode, but we still don't have preemptive scheduling. In terms of scheduling, the current solution is essentially the same as the previous chapter's cooperative scheduler. Running the code at this point will produce something like the following:
 
-This means we have several important questions to answer in order to implement a context switch.
+```
+Welcome to Chapter 9, Context Switch!
+Entering task 0... systime 0... Task in USER mode
+Exiting task 0...
+Switching context! Time 2000; (idle) --> 1
+Entering task 1... systime 2000... Task in USER mode
+Exiting task 1...
+Switching context! Time 4000; (idle) --> 1
+Entering task 1... systime 4000... Task in USER mode
+Switching context! Time 5000; 1 --> 0
+Exiting task 1...
+Switching context! Time 6000; (idle) --> 1
+Entering task 1... systime 6000... Task in USER mode
+Exiting task 1...
+Switching context! Time 8000; (idle) --> 1
+Entering task 1... systime 8000... Task in USER mode
+Exiting task 1...
+Switching context! Time 10000; (idle) --> 0
+Entering task 0... systime 10000... Task in USER mode
+Switching context! Time 10001; 0 --> 1
+Exiting task 0...
+Switching context! Time 12001; (idle) --> 1
+```
 
-* What exactly is the context of a task that we need to save?
+At certain moments, our scheduler knows that it wants to switch to a different task, but it doesn't actually do so. For example, at systime `5000` above, Task 1 was already running (having started at `4000`) and the scheduler wanted to switch to Task 0... but it didn't actually happen. This should not come as a surprise. `run_task` doesn't return until the `entry()` call, which is the task itself, returns.
 
-* Where to save the context?
+We're still missing the key aspect of a preemptive scheduler, the preemption itself. If we're running Task 0 and need to switch to Task 1, then Task 0 should be forcefully suspended, its state saved, and only then should Task 1 get control. When it's time to run Task 0 again, it should resume from its saved context instead of restarting from the beginning. All of that has to be done in a manner that is transparent to the tasks themselves. From a task's own perspective, everything should be the same whether it got preempted and resumed or not. 
 
-* How to restore a saved context?
-
-* How to actually hand control back to a task after restoring its context?
-
-A task's context is the values in CPU registers. These include the general-purpose registers, the all-import PC (R15) register that holds the address of the next instruction to execute, the SP register (R13) that points to the stack, and the CPSR (program status) register. The stack pointer is particularly noteworthy here because changing the SP will be what finalizes the context switch.
-
-Let's take a look at the system-level view of ARMv7-A registers.
-
-![System registers](images/08_sysregs.png)
-
-Our tasks run in supervisor mode (although user mode should be used there), and we want to perform context switching from IRQ mode. The link register LR holds the preferred return address from the current function or interrupt. As you can see, each mode has its own LR, so in IRQ mode we have LR_irq. It will normally point to where the CPU should continue from after the interrupt is handled. So if a timer interrupt arrived while we're somewhere in Task 0, LR_irq will point to somewhere in Task 0. This gives us a hint that we'll need to change the LR in order to give control to another task.
-
-So we can save a task's context by saving all of its registers. We could do that by first defining a struct to
+In principle, this means we need to expand context switching so that it can encompass the entirety of a still-running task. What we did previously with the supervisor calls is also a form of context switching, so implementing preemption is a similar task.

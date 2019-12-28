@@ -3,7 +3,8 @@
 #define LR_REG_OFFSET (14)
 
 enum syscalls {
-    SYSCALL_ENDTASK = 0
+    SYSCALL_ENDTASK = 0,
+    SYSCALL_SCHED
 };
 
 void syscall_handler(uint32_t syscall, uint32_t *regs) {
@@ -14,6 +15,10 @@ void syscall_handler(uint32_t syscall, uint32_t *regs) {
         "add sp, r3 \n\t"
         "ldr r3, [r1, #56] \n\t" //LR is regs[14]
         "mov pc, r3");
+        break;
+
+    case SYSCALL_SCHED:
+        sched_choose();
         break;
     }
 }
