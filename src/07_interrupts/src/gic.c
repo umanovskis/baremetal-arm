@@ -10,7 +10,6 @@ void gic_init(void) {
     WRITE32(gic_ifregs->CCPMR, 0xFFFFu); /* Enable all interrupt priorities */
     WRITE32(gic_ifregs->CCTLR, CCTRL_ENABLE); /* Enable interrupt forwarding to this CPU */
 
-    gic_distributor_registers* gic_dregs = (gic_distributor_registers*)GIC_DIST_BASE;
     WRITE32(gic_dregs->DCTLR, DCTRL_ENABLE); /* Enable the interrupt distributor */
 }
 
