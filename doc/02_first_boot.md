@@ -180,7 +180,7 @@ SECTIONS
 }
 ```
 
-This script tells the linker that the program's entry point is at the global symbol `_Entry`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
+This script tells the linker that the program's entry point is at the global symbol `_Reset`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
 
 ## What's a linker anyway?
 
