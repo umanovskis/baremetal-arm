@@ -373,6 +373,6 @@ Running `objdump` with the `-t` switch shows the symbol table, so for `arm-none-
 600000dc g     F .text	00000054 write
 ```
 
-You can see how smybols defined in the assembly, C function names and linker-exported symbols are all available in the output.
+You can see how symbols defined in the assembly, C function names and linker-exported symbols are all available in the output.
 
 Finally, running `arm-none-eabi-objdump -d cenv.elf` will disassemble the code, something that usually ends up being necessary at some point in low-level embedded development.
