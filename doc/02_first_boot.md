@@ -117,10 +117,10 @@ That is still valid assembly and feels like it should work, but it wouldn't - th
 
 QEMU is primarily used for running Linux or other Unix-like kernels, which is reflected in how it's normally started. When we start QEMU with `-kernel first-hang.bin`, QEMU acts as if booting such a kernel. It copies our code to the memory location `0x10000`, that is, a 64 kilobyte offset from the beginning of RAM. Then it starts executing from the address `0x0`, where QEMU already has some startup code meant to prepare the machine and jump to the kernel. 
 
-Sounds like we should be able to find our `first-hang.bin` at `0x10000` in the QEMU memory then. Let's try do to that in the QEMU monitor, using the `xp` command which displays physical memory. In the QEMU monitor prompt, type `xp /4w 0x100000` to display the four words starting with that memory address.
+Sounds like we should be able to find our `first-hang.bin` at `0x10000` in the QEMU memory then. Let's try do to that in the QEMU monitor, using the `xp` command which displays physical memory. In the QEMU monitor prompt, type `xp /4w 0x10000` to display the four words starting with that memory address.
 
 ```
-0000000000100000: 0x00000000 0x00000000 0x00000000 0x00000000
+0000000000010000: 0x00000000 0x00000000 0x00000000 0x00000000
 ```
 
 Everything is zero! If you check the address `0x0`, you will find the same. How come?
@@ -180,7 +180,7 @@ SECTIONS
 }
 ```
 
-This script tells the linker that the program's entry point is at the global symbol `_Entry`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
+This script tells the linker that the program's entry point is at the global symbol `_Reset`, which we export from `startup.s`. Then the script goes on to list the section layout. Starting at address `0x0`, we create the `.text` section for code, consisting first of the `.vector_table` section from `startup.o`, and then any and all other `.text` sections. We align the code to an 8-byte boundary as well.
 
 ## What's a linker anyway?
 
