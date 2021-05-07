@@ -31,7 +31,7 @@ If everything goes well, you should, after a short build process, see the file `
 Having confirmed that you can run U-Boot, make a couple of small modifications to it. In `configs/vexpress_ca9x4_defconfig`, change the `CONFIG_BOOTCOMMAND` line to the following:
 
 ```
-CONFIG_BOOTCOMMAND="run mmc_elf_bootcmd"
+CONFIG_BOOTCOMMAND="run bootcmd_bare_arm"
 ```
 
 The purpose of that will become clear a bit later on. Then open `include/config_distro_bootcmd.h` and go to the end of the file. Find the last line that says `done\0` and edit from there so that the file looks like this:
